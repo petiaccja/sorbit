@@ -1,7 +1,4 @@
-use serde_binfmt::{
-    serialize::Serialize,
-    serializer::{BitFieldSerializer as _, Serializer, StructSerializer as _},
-};
+use serde_binfmt::{bit_field, serialize::Serialize, serializer::Serializer};
 
 struct IPv4Header {
     // #[bits = 4]
@@ -20,28 +17,21 @@ struct IPv4Header {
     fragment_offset: u16,
     time_to_live: u8,
     protocol: u8,
-    header_checksum: u16,
+    header_checksum: u16, // Checksum calculation?
     source_address: u32,
     destination_address: u32,
 }
 
 impl Serialize for IPv4Header {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<(), S::Error> {
-        serializer.serialize_struct(|serializer| {
-            serializer.serialize_bit_field(|bf| {
-                bf.serialize_member(self.version, 0..4, Some("version"))?;
-                bf.serialize_member(self.ihl, 4..8, Some("ihl"))
-            })?;
-            serializer.serialize_bit_field(|bf| {
-                bf.serialize_member(self.dscp, 0..4, Some("dscp"))?;
-                bf.serialize_member(self.ecn, 4..8, Some("ecn"))
-            })?;
-            serializer.serialize_member(self.total_length, Some("total_length"))?;
-            serializer.serialize_member(self.identification, Some("identification"))?;
-            serializer.serialize_bit_field(|bf| {
-                bf.serialize_member(self.flags, 0..3, Some("flags"))?;
-                bf.serialize_member(self.fragment_offset, 3..13, Some("fragment_offset"))
-            })
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error> {
+        serializer.composite(|serializer| {
+            serializer.serialize_u8(bit_field!(u8 => {(self.version, 0..4), (self.ihl, 4..8)}).unwrap())?;
+            serializer.serialize_u8(bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap())?;
+            serializer.serialize_u16(self.total_length)?;
+            serializer.serialize_u16(self.identification)?;
+            serializer
+                .serialize_u16(bit_field!(u16 => {(self.flags, 0..3), (self.fragment_offset, 3..13)}).unwrap())?;
+            Ok(())
         })
     }
 }

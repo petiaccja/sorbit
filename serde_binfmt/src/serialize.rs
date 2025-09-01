@@ -1,5 +1,5 @@
 use crate::serializer::Serializer;
 
 pub trait Serialize {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<(), S::Error>;
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error>;
 }
