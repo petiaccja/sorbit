@@ -1,8 +1,8 @@
 use core::ops::{Add, BitOrAssign, Bound::*, Range, RangeBounds};
 use num::PrimInt;
 
-use crate::bit_pack::{BitPack, BitUnpack};
-use crate::bit_util::{bit_size_of, keep_lowest_n_bits};
+use super::bit_pack::{BitPack, BitUnpack};
+use super::bit_util::{bit_size_of, keep_lowest_n_bits};
 
 pub struct BitField<T: PrimInt>
 where
@@ -17,7 +17,7 @@ where
 macro_rules! bit_field {
     ($packed_ty:ty => { $(($value:expr, $to_bits:expr)),*}) => {
         move || -> ::core::result::Result<$packed_ty, ()> {
-            let mut bit_field = ::serde_binfmt::bit_field::BitField::<$packed_ty>::new();
+            let mut bit_field = ::serde_binfmt::bit::BitField::<$packed_ty>::new();
             $(bit_field.pack($value, $to_bits).map_err(|_| ())?;)*
             ::core::result::Result::Ok(bit_field.into_bits())
         }()

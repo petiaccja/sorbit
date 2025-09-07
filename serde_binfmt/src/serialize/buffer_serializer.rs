@@ -1,0 +1,431 @@
+use alloc::vec::Vec;
+
+use super::Serializer;
+use crate::byte_order::ByteOrder;
+use crate::error::Error;
+
+pub struct BufferSerializer {
+    buffer: Vec<u8>,
+    // New items will be serialized using this byte order.
+    byte_order: ByteOrder,
+    // The offset into `buffer` at which the current composite object begins.
+    // This is important for alignment and padding within the composite.
+    base: usize,
+}
+
+macro_rules! to_xe_bytes {
+    ($value:expr, $byte_order:expr) => {
+        match $byte_order {
+            ByteOrder::BigEndian => $value.to_be_bytes(),
+            ByteOrder::LittleEndian => $value.to_le_bytes(),
+        }
+    };
+}
+
+impl BufferSerializer {
+    /// Create a new serializer.
+    ///
+    /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
+    /// [`Self::little_endian`] functions to set a specific byte order:
+    /// ```
+    /// use serde_binfmt::serialize::BufferSerializer;
+    /// let serializer = BufferSerializer::new().little_endian();
+    /// ```
+    pub fn new() -> Self {
+        Self { buffer: Vec::new(), byte_order: ByteOrder::BigEndian, base: 0 }
+    }
+
+    /// Create a new serializer that uses the **big endian** byte order.
+    pub fn big_endian(self) -> Self {
+        Self { byte_order: ByteOrder::BigEndian, ..self }
+    }
+
+    /// Create a new serializer that uses the **little endian** byte order.
+    pub fn little_endian(self) -> Self {
+        Self { byte_order: ByteOrder::LittleEndian, ..self }
+    }
+
+    /// Take the serialized bytes from the serializer.
+    pub fn take(self) -> Vec<u8> {
+        self.buffer
+    }
+
+    fn nest(
+        &mut self,
+        serialize_members: impl FnOnce(&mut <Self as Serializer>::Nested) -> Result<(), <Self as Serializer>::Error>,
+        change_byte_order: Option<ByteOrder>,
+        change_base: Option<usize>,
+    ) -> Result<(), <Self as Serializer>::Error> {
+        // Borrow self's buffer and create a nested serializer.
+        let mut nested = {
+            let nested_buffer = core::mem::replace(&mut self.buffer, Vec::new());
+            let nested_byte_order = change_byte_order.unwrap_or(self.byte_order);
+            let nested_base = change_base.unwrap_or(self.base);
+            Self { buffer: nested_buffer, byte_order: nested_byte_order, base: nested_base }
+        };
+        let result = serialize_members(&mut nested);
+        // Explode nested and restore self's buffer.
+        // Nested's byte order and base are discarded.
+        {
+            let Self { buffer, byte_order: _, base: _ } = nested;
+            let _ = core::mem::replace(&mut self.buffer, buffer);
+        };
+        result
+    }
+
+    fn get_composite_len(&self) -> usize {
+        self.buffer.len() - self.base
+    }
+}
+
+impl Serializer for BufferSerializer {
+    type Error = Error;
+    type Nested = Self;
+
+    fn serialize_bool(&mut self, value: bool) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&[value as u8]);
+        Ok(())
+    }
+
+    fn serialize_u8(&mut self, value: u8) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_u16(&mut self, value: u16) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_u32(&mut self, value: u32) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_u64(&mut self, value: u64) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_i8(&mut self, value: i8) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_i16(&mut self, value: i16) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_i32(&mut self, value: i32) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_i64(&mut self, value: i64) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(&to_xe_bytes!(value, self.byte_order));
+        Ok(())
+    }
+
+    fn serialize_array<const N: usize>(&mut self, value: &[u8; N]) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(value);
+        Ok(())
+    }
+
+    fn serialize_slice(&mut self, value: &[u8]) -> Result<(), Self::Error> {
+        self.buffer.extend_from_slice(value);
+        Ok(())
+    }
+
+    fn serialize_composite(
+        &mut self,
+        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<(), Self::Error>,
+    ) -> Result<(), Self::Error> {
+        self.nest(serialize_members, None, Some(self.buffer.len()))
+    }
+
+    fn change_byte_order(
+        &mut self,
+        byte_order: ByteOrder,
+        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<(), Self::Error>,
+    ) -> Result<(), Self::Error> {
+        self.nest(serialize_members, Some(byte_order), None)
+    }
+
+    fn pad(&mut self, until: usize) -> Result<(), Self::Error> {
+        if self.get_composite_len() <= until {
+            self.buffer.resize(self.base + until, 0);
+            Ok(())
+        } else {
+            Err(Error::LengthExceedsPadding)
+        }
+    }
+
+    fn align(&mut self, multiple_of: usize) -> Result<(), Self::Error> {
+        let len = self.get_composite_len();
+        let aligned_len = (len + multiple_of - 1) / multiple_of * multiple_of;
+        self.buffer.resize(self.base + aligned_len, 0);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    //--------------------------------------------------------------------------
+    // bool
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_bool() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_bool(true)?;
+        s.serialize_bool(false)?;
+        assert_eq!(s.take(), vec![1, 0]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // u* be
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_u8_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u8(0xDE)?;
+        assert_eq!(s.take(), vec![0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u16_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u16(0xDEAD)?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u32_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u32(0xDEADBEEF)?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u64_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u64(0xDEADBEEF_FEEDDEAF)?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // i* be
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_i8_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_i8(0xDE_u8.cast_signed())?;
+        assert_eq!(s.take(), vec![0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i16_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_i16(0xDEAD_u16.cast_signed())?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i32_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_i32(0xDEADBEEF_u32.cast_signed())?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD, 0xBE, 0xEF]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i64_be() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_i64(0xDEADBEEF_FEEDDEAF_u64.cast_signed())?;
+        assert_eq!(s.take(), vec![0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // u* le
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_u8_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_u8(0xDE)?;
+        assert_eq!(s.take(), vec![0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u16_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_u16(0xDEAD)?;
+        assert_eq!(s.take(), vec![0xAD, 0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u32_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_u32(0xDEADBEEF)?;
+        assert_eq!(s.take(), vec![0xEF, 0xBE, 0xAD, 0xDE,]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_u64_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_u64(0xDEADBEEF_FEEDDEAF)?;
+        assert_eq!(s.take(), vec![0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // i* le
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_i8_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_i8(0xDE_u8.cast_signed())?;
+        assert_eq!(s.take(), vec![0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i16_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_i16(0xDEAD_u16.cast_signed())?;
+        assert_eq!(s.take(), vec![0xAD, 0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i32_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_i32(0xDEADBEEF_u32.cast_signed())?;
+        assert_eq!(s.take(), vec![0xEF, 0xBE, 0xAD, 0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i64_le() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_i64(0xDEADBEEF_FEEDDEAF_u64.cast_signed())?;
+        assert_eq!(s.take(), vec![0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Array & slice
+    //--------------------------------------------------------------------------
+
+    #[test]
+    fn serialize_array() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_array(&[0xAF, 0xDE, 0xED])?;
+        assert_eq!(s.take(), vec![0xAF, 0xDE, 0xED]);
+        Ok(())
+    }
+    #[test]
+    fn serialize_slice() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().little_endian();
+        s.serialize_slice(&[0xAF, 0xDE, 0xED])?;
+        assert_eq!(s.take(), vec![0xAF, 0xDE, 0xED]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Composites
+    //--------------------------------------------------------------------------
+    #[test]
+    fn serialize_composite() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u8(0xEE)?;
+        s.serialize_composite(|s| s.serialize_u16(0xAABB))?;
+        s.serialize_u8(0xFF)?;
+        assert_eq!(s.take(), vec![0xEE, 0xAA, 0xBB, 0xFF]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Byte order
+    //--------------------------------------------------------------------------
+    #[test]
+    fn change_byte_order() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u16(0xEEFF)?;
+        s.change_byte_order(ByteOrder::LittleEndian, |s| s.serialize_u16(0xAABB))?;
+        s.serialize_u16(0xFFEE)?;
+        assert_eq!(s.take(), vec![0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Padding
+    //--------------------------------------------------------------------------
+    #[test]
+    fn pad_top_level() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_u8(0xEE)?;
+        s.pad(4)?;
+        assert_eq!(s.take(), vec![0xEE, 0x00, 0x00, 0x00]);
+        Ok(())
+    }
+
+    #[test]
+    fn pad_length_exceeds_padding() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_array(&[0xAA, 0xBB, 0xCC])?;
+        assert_eq!(s.pad(2), Err(Error::LengthExceedsPadding));
+        Ok(())
+    }
+
+    #[test]
+    fn pad_composite() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_array(&[0xAA, 0xBB, 0xCC])?;
+        s.serialize_composite(|s| {
+            s.serialize_bool(true)?;
+            s.pad(4)
+        })?;
+        s.serialize_u8(0xAF)?;
+        assert_eq!(s.take(), vec![0xAA, 0xBB, 0xCC, 0x01, 0x00, 0x00, 0x00, 0xAF]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Alignment
+    //--------------------------------------------------------------------------
+    #[test]
+    fn align_top_level() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_array(&[0x62, 0x85, 0x28, 0x75, 0x27])?;
+        s.align(4)?;
+        s.serialize_bool(true)?;
+        assert_eq!(s.take(), vec![0x62, 0x85, 0x28, 0x75, 0x27, 0x00, 0x00, 0x00, 0x01]);
+        Ok(())
+    }
+
+    #[test]
+    fn align_composite() -> Result<(), Error> {
+        let mut s = BufferSerializer::new().big_endian();
+        s.serialize_bool(true)?;
+        s.serialize_composite(|s| {
+            s.serialize_array(&[0x62, 0x85, 0x28, 0x75, 0x27])?;
+            s.align(4)
+        })?;
+        s.serialize_bool(true)?;
+        assert_eq!(s.take(), vec![0x01, 0x62, 0x85, 0x28, 0x75, 0x27, 0x00, 0x00, 0x00, 0x01]);
+        Ok(())
+    }
+}

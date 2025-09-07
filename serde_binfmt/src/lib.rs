@@ -1,11 +1,13 @@
-#![no_std]
+// Disable the [`std`] standard crate when the "std" feature is not enabled.
+#![cfg_attr(not(feature = "std"), no_std)]
 
-pub mod bit_field;
-pub mod bit_pack;
-pub mod bit_util;
+// Enable the [`alloc`] standard crate when the "alloc" feature is enabled.
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+pub mod bit;
 pub mod byte_order;
+pub mod error;
 pub mod serialize;
-pub mod serializer;
-mod standard_types;
 
 extern crate self as serde_binfmt;

@@ -3,5 +3,10 @@ name = "serde_binfmt"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+alloc = []
+std = ["alloc"]
+default = ["std"]
+
 [dependencies]
 num = { version = "0.4.3", default-features = false }
