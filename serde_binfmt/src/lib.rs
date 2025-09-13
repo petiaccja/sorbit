@@ -7,7 +7,9 @@ extern crate alloc;
 
 pub mod bit;
 pub mod byte_order;
+pub mod deserialize;
 pub mod error;
+pub mod io;
 pub mod serialize;
 
 extern crate self as serde_binfmt;
