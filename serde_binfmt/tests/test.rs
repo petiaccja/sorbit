@@ -2,7 +2,8 @@ use serde_binfmt::{
     bit_field,
     byte_order::ByteOrder,
     error::Error,
-    serialize::{BufferSerializer, Serialize, Serializer},
+    io::GrowingMemoryStream,
+    serialize::{Serialize, Serializer, StreamSerializer},
 };
 
 #[allow(unused)]
@@ -85,8 +86,8 @@ fn serialize_ipv4_header() -> Result<(), Error> {
         0x88, 0x36, 0x36, 0x60
     ];
 
-    let mut s = BufferSerializer::new();
+    let mut s = StreamSerializer::new(GrowingMemoryStream::new());
     header.serialize(&mut s)?;
-    assert_eq!(&s.take(), &expected);
+    assert_eq!(&s.take().take(), &expected);
     Ok(())
 }

@@ -24,6 +24,6 @@ pub trait Serializer: Sized {
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<(), Self::Error>,
     ) -> Result<(), Self::Error>;
-    fn pad(&mut self, until: usize) -> Result<(), Self::Error>;
-    fn align(&mut self, multiple_of: usize) -> Result<(), Self::Error>;
+    fn pad(&mut self, until: u64) -> Result<(), Self::Error>;
+    fn align(&mut self, multiple_of: u64) -> Result<(), Self::Error>;
 }

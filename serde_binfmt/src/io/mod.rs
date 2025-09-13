@@ -1,8 +1,8 @@
+mod fixed_memory_stream;
 #[cfg(feature = "alloc")]
-mod byte_stream;
-mod fixed_byte_stream;
+mod growing_memory_stream;
 mod traits;
 
-pub use byte_stream::ByteStream;
-pub use fixed_byte_stream::FixedByteStream;
+pub use fixed_memory_stream::FixedMemoryStream;
+pub use growing_memory_stream::GrowingMemoryStream;
 pub use traits::{Read, Seek, SeekFrom, Write};
