@@ -1,4 +1,5 @@
-use crate::io::Write;
+use crate::io::{PartialStream, Read, Seek, Write};
+use crate::serialize::DeferredSerializer;
 
 use super::Serializer;
 use crate::byte_order::ByteOrder;
@@ -14,6 +15,9 @@ pub struct StreamSerializer<Stream: Write> {
     // This is important for alignment and padding within the composite.
     composite_base: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section(core::ops::Range<u64>);
 
 macro_rules! to_xe_bytes {
     ($value:expr, $byte_order:expr) => {
@@ -56,12 +60,12 @@ impl<Stream: Write> StreamSerializer<Stream> {
         self.stream.expect(UNWRAP_STREAM_MSG)
     }
 
-    fn nest(
+    fn nest<O>(
         &mut self,
-        serialize_members: impl FnOnce(&mut <Self as Serializer>::Nested) -> Result<(), <Self as Serializer>::Error>,
+        serialize_members: impl FnOnce(&mut <Self as Serializer>::Nested) -> Result<O, <Self as Serializer>::Error>,
         change_byte_order: Option<ByteOrder>,
         change_base: Option<u64>,
-    ) -> Result<(), <Self as Serializer>::Error> {
+    ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
         // Borrow self's buffer and create a nested serializer.
         let mut nested = {
             let nested_stream = self.stream.take();
@@ -75,6 +79,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
                 composite_base: nested_base,
             }
         };
+        let start_pos = self.stream_len;
         let result = serialize_members(&mut nested);
         // Explode nested and restore self's buffer.
         // Nested's byte order and base are discarded.
@@ -83,19 +88,21 @@ impl<Stream: Write> StreamSerializer<Stream> {
             self.stream = stream;
             self.stream_len = stream_len;
         };
-        result
+        result.map(|_| Section(start_pos..self.stream_len))
     }
 
-    fn write(&mut self, bytes: &[u8]) -> Result<(), <Self as Serializer>::Error> {
+    fn write(&mut self, bytes: &[u8]) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
+        let start_pos = self.stream_len;
         let stream = self.stream.as_mut().expect(UNWRAP_STREAM_MSG);
         let result = stream.write(bytes);
         if result.is_ok() {
             self.stream_len += bytes.len() as u64;
         }
-        result
+        result.map(|_| Section(start_pos..self.stream_len))
     }
 
-    fn write_until(&mut self, until: u64, value: u8) -> Result<(), <Self as Serializer>::Error> {
+    fn write_until(&mut self, until: u64, value: u8) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
+        let start_pos = self.stream_len;
         let mut num_to_write = until as i64 - self.stream_len as i64;
         if num_to_write > 0 {
             while num_to_write >= 64 as i64 {
@@ -106,7 +113,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
                 self.write(&[value])?;
                 num_to_write -= 1;
             }
-            Ok(())
+            Ok(Section(start_pos..self.stream_len))
         } else {
             Err(Error::LengthExceedsPadding)
         }
@@ -118,78 +125,133 @@ impl<Stream: Write> StreamSerializer<Stream> {
 }
 
 impl<Stream: Write> Serializer for StreamSerializer<Stream> {
+    type Ok = Section;
     type Error = Error;
     type Nested = Self;
 
-    fn serialize_bool(&mut self, value: bool) -> Result<(), Self::Error> {
+    fn serialize_bool(&mut self, value: bool) -> Result<Self::Ok, Self::Error> {
         self.write(&[value as u8])
     }
 
-    fn serialize_u8(&mut self, value: u8) -> Result<(), Self::Error> {
+    fn serialize_u8(&mut self, value: u8) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_u16(&mut self, value: u16) -> Result<(), Self::Error> {
+    fn serialize_u16(&mut self, value: u16) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_u32(&mut self, value: u32) -> Result<(), Self::Error> {
+    fn serialize_u32(&mut self, value: u32) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_u64(&mut self, value: u64) -> Result<(), Self::Error> {
+    fn serialize_u64(&mut self, value: u64) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_i8(&mut self, value: i8) -> Result<(), Self::Error> {
+    fn serialize_i8(&mut self, value: i8) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_i16(&mut self, value: i16) -> Result<(), Self::Error> {
+    fn serialize_i16(&mut self, value: i16) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_i32(&mut self, value: i32) -> Result<(), Self::Error> {
+    fn serialize_i32(&mut self, value: i32) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_i64(&mut self, value: i64) -> Result<(), Self::Error> {
+    fn serialize_i64(&mut self, value: i64) -> Result<Self::Ok, Self::Error> {
         self.write(&to_xe_bytes!(value, self.byte_order))
     }
 
-    fn serialize_array<const N: usize>(&mut self, value: &[u8; N]) -> Result<(), Self::Error> {
+    fn serialize_array<const N: usize>(&mut self, value: &[u8; N]) -> Result<Self::Ok, Self::Error> {
         self.write(value)
     }
 
-    fn serialize_slice(&mut self, value: &[u8]) -> Result<(), Self::Error> {
+    fn serialize_slice(&mut self, value: &[u8]) -> Result<Self::Ok, Self::Error> {
         self.write(value)
     }
 
-    fn serialize_composite(
+    fn serialize_composite<O>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error> {
+        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
+    ) -> Result<Self::Ok, Self::Error> {
         self.nest(serialize_members, None, Some(self.stream_len))
     }
 
-    fn change_byte_order(
+    fn change_byte_order<O>(
         &mut self,
         byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error> {
+        serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
+    ) -> Result<Self::Ok, Self::Error> {
         self.nest(serialize_members, Some(byte_order), None)
     }
 
-    fn pad(&mut self, until: u64) -> Result<(), Self::Error> {
+    fn pad(&mut self, until: u64) -> Result<Self::Ok, Self::Error> {
         let global_until = self.composite_base + until;
         self.write_until(global_until, 0)
     }
 
-    fn align(&mut self, multiple_of: u64) -> Result<(), Self::Error> {
+    fn align(&mut self, multiple_of: u64) -> Result<Self::Ok, Self::Error> {
         let len = self.get_composite_len();
         let aligned_len = (len + multiple_of - 1) / multiple_of * multiple_of;
         let global_until = self.composite_base + aligned_len;
         self.write_until(global_until, 0)
+    }
+}
+
+impl<Stream: Read + Write + Seek> DeferredSerializer for StreamSerializer<Stream> {
+    type SectionSerializer = StreamSerializer<PartialStream<Stream>>;
+    type SectionReader = PartialStream<Stream>;
+
+    fn update_section(
+        &mut self,
+        section: Self::Ok,
+        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<(), Self::Error>,
+    ) -> Result<(), Self::Error> {
+        let range = section.0;
+        let stream_pos = self.stream.as_mut().expect(UNWRAP_STREAM_MSG).stream_position()?;
+        let stream = self.stream.take().expect(UNWRAP_STREAM_MSG);
+        let partial_stream = match PartialStream::new(stream, range) {
+            Ok(stream) => todo!(),
+            Err(_) => todo!(),
+        };
+        move || -> Result<PartialStream<Stream>, (Error, PartialStream<Stream>)> {
+
+            let stream_pos = stream.stream_position()?;
+            let section_serializer = StreamSerializer::new(partial_stream);
+            update_section(&mut section_serializer)?;
+            result.map(partial_stream.take())
+        };
+        todo!()
+    }
+
+    fn read_section<Output>(
+        &mut self,
+        section: Self::Ok,
+        analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
+    ) -> Output {
+        let range = section.0;
+        todo!()
+    }
+}
+
+impl crate::serialize::Section for Section {
+    fn start(&self) -> u64 {
+        self.0.start
+    }
+    fn end(&self) -> u64 {
+        self.0.end
+    }
+    fn len(&self) -> u64 {
+        self.end() - self.start()
+    }
+}
+
+impl From<Section> for () {
+    fn from(_value: Section) -> Self {
+        ()
     }
 }
 

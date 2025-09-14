@@ -32,7 +32,7 @@ struct IPv4Header {
 }
 
 impl Serialize for IPv4Header {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<(), S::Error> {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Ok, S::Error> {
         serializer.change_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 s.serialize_u8(bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap())?;

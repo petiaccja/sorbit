@@ -1,15 +1,16 @@
-use super::traits::{Read, Seek, SeekFrom, Write};
+use super::basic_stream::{Read, Seek, SeekFrom, Write};
 use crate::error::Error;
 use alloc::vec::Vec;
 
+#[derive(Debug)]
 pub struct GrowingMemoryStream {
     buffer: Vec<u8>,
-    pos: usize,
+    stream_pos: usize,
 }
 
 impl GrowingMemoryStream {
     pub fn new() -> Self {
-        Self { buffer: Vec::new(), pos: 0 }
+        Self { buffer: Vec::new(), stream_pos: 0 }
     }
 
     pub fn take(self) -> Vec<u8> {
@@ -19,22 +20,22 @@ impl GrowingMemoryStream {
 
 impl From<Vec<u8>> for GrowingMemoryStream {
     fn from(value: Vec<u8>) -> Self {
-        Self { buffer: value, pos: 0 }
+        Self { buffer: value, stream_pos: 0 }
     }
 }
 
 impl From<&[u8]> for GrowingMemoryStream {
     fn from(value: &[u8]) -> Self {
-        Self { buffer: value.into(), pos: 0 }
+        Self { buffer: value.into(), stream_pos: 0 }
     }
 }
 
 impl Read for GrowingMemoryStream {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
-        if self.pos + bytes.len() <= self.buffer.len() {
-            let range = self.pos..(self.pos + bytes.len());
+        if self.stream_pos + bytes.len() <= self.buffer.len() {
+            let range = self.stream_pos..(self.stream_pos + bytes.len());
             bytes.copy_from_slice(&self.buffer[range]);
-            self.pos += bytes.len();
+            self.stream_pos += bytes.len();
             Ok(())
         } else {
             Err(Error::EndOfFile)
@@ -44,30 +45,24 @@ impl Read for GrowingMemoryStream {
 
 impl Write for GrowingMemoryStream {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        let new_len = core::cmp::max(self.buffer.len(), self.pos + bytes.len());
+        let new_len = core::cmp::max(self.buffer.len(), self.stream_pos + bytes.len());
         self.buffer.resize(new_len, 0);
-        let range = self.pos..(self.pos + bytes.len());
+        let range = self.stream_pos..(self.stream_pos + bytes.len());
         self.buffer[range].copy_from_slice(bytes);
-        self.pos += bytes.len();
+        self.stream_pos += bytes.len();
         Ok(())
     }
 }
 
 impl Seek for GrowingMemoryStream {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error> {
-        let new_pos = match pos {
-            SeekFrom::Start(offset) => usize::try_from(offset).map_err(|_| Error::EndOfFile),
-            SeekFrom::End(offset) => {
-                let pos = (self.buffer.len() as i64) + offset;
-                usize::try_from(pos).map_err(|_| Error::EndOfFile)
-            }
-            SeekFrom::Current(offset) => {
-                let pos = (self.pos as i64) + offset;
-                usize::try_from(pos).map_err(|_| Error::EndOfFile)
-            }
-        }?;
-        self.pos = new_pos;
-        Ok(self.pos as u64)
+        let new_stream_pos = pos.absolute(self.stream_pos as u64, self.buffer.len() as u64);
+        if let Ok(new_stream_pos) = usize::try_from(new_stream_pos) {
+            self.stream_pos = new_stream_pos as usize;
+            Ok(self.stream_pos as u64)
+        } else {
+            Err(Error::EndOfFile)
+        }
     }
 }
 
@@ -143,7 +138,7 @@ mod tests {
     fn write_fully_outside_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         let values = [10u8; 2];
-        stream.pos = 9;
+        stream.stream_pos = 9;
         assert_eq!(stream.write(&values), Ok(()));
         assert_eq!(stream.stream_position(), Ok(11));
         assert_eq!(stream.buffer, [1, 2, 3, 4, 5, 6, 7, 0, 0, 10, 10]);
@@ -153,14 +148,14 @@ mod tests {
     fn seek_from_start_within_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::Start(4)), Ok(4));
-        assert_eq!(stream.pos, 4);
+        assert_eq!(stream.stream_pos, 4);
     }
 
     #[test]
     fn seek_from_start_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::Start(9)), Ok(9));
-        assert_eq!(stream.pos, 9);
+        assert_eq!(stream.stream_pos, 9);
     }
 
     #[test]
@@ -168,41 +163,41 @@ mod tests {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::Current(5)), Ok(5));
         assert_eq!(stream.seek(SeekFrom::Current(-2)), Ok(3));
-        assert_eq!(stream.pos, 3);
+        assert_eq!(stream.stream_pos, 3);
     }
 
     #[test]
     fn seek_from_current_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::Current(9)), Ok(9));
-        assert_eq!(stream.pos, 9);
+        assert_eq!(stream.stream_pos, 9);
     }
 
     #[test]
     fn seek_from_current_negative_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 
     #[test]
     fn seek_from_end_within_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::End(-3)), Ok(4));
-        assert_eq!(stream.pos, 4);
+        assert_eq!(stream.stream_pos, 4);
     }
 
     #[test]
     fn seek_from_end_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::End(2)), Ok(9));
-        assert_eq!(stream.pos, 9);
+        assert_eq!(stream.stream_pos, 9);
     }
 
     #[test]
     fn seek_from_end_negative_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(stream.seek(SeekFrom::End(-12)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 }

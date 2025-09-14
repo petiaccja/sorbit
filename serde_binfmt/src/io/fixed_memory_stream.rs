@@ -1,23 +1,24 @@
-use super::traits::{Read, Seek, SeekFrom, Write};
+use super::basic_stream::{Read, Seek, SeekFrom, Write};
 use crate::error::Error;
 
+#[derive(Debug)]
 pub struct FixedMemoryStream<'buffer> {
     buffer: &'buffer mut [u8],
-    pos: usize,
+    stream_pos: usize,
 }
 
 impl<'buffer> FixedMemoryStream<'buffer> {
     pub fn new(buffer: &'buffer mut [u8]) -> Self {
-        Self { buffer, pos: 0 }
+        Self { buffer, stream_pos: 0 }
     }
 }
 
 impl<'buffer> Read for FixedMemoryStream<'buffer> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
-        if self.pos + bytes.len() <= self.buffer.len() {
-            let range = self.pos..(self.pos + bytes.len());
+        if self.stream_pos + bytes.len() <= self.buffer.len() {
+            let range = self.stream_pos..(self.stream_pos + bytes.len());
             bytes.copy_from_slice(&self.buffer[range]);
-            self.pos += bytes.len();
+            self.stream_pos += bytes.len();
             Ok(())
         } else {
             Err(Error::EndOfFile)
@@ -27,10 +28,10 @@ impl<'buffer> Read for FixedMemoryStream<'buffer> {
 
 impl<'buffer> Write for FixedMemoryStream<'buffer> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        if self.pos + bytes.len() <= self.buffer.len() {
-            let range = self.pos..(self.pos + bytes.len());
+        if self.stream_pos + bytes.len() <= self.buffer.len() {
+            let range = self.stream_pos..(self.stream_pos + bytes.len());
             self.buffer[range].copy_from_slice(bytes);
-            self.pos += bytes.len();
+            self.stream_pos += bytes.len();
             Ok(())
         } else {
             Err(Error::EndOfFile)
@@ -40,27 +41,18 @@ impl<'buffer> Write for FixedMemoryStream<'buffer> {
 
 impl<'buffer> Seek for FixedMemoryStream<'buffer> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error> {
-        let new_pos = match pos {
-            SeekFrom::Start(offset) => usize::try_from(offset).map_err(|_| Error::EndOfFile),
-            SeekFrom::End(offset) => {
-                let pos = (self.buffer.len() as i64) + offset;
-                usize::try_from(pos).map_err(|_| Error::EndOfFile)
-            }
-            SeekFrom::Current(offset) => {
-                let pos = (self.pos as i64) + offset;
-                usize::try_from(pos).map_err(|_| Error::EndOfFile)
-            }
-        }?;
-        if (0..=self.buffer.len()).contains(&new_pos) {
-            self.pos = new_pos;
-            Ok(self.pos as u64)
+        let new_stream_pos = pos.absolute(self.stream_pos as u64, self.buffer.len() as u64);
+        let seek_range = 0..=(self.buffer.len() as i64);
+        if seek_range.contains(&new_stream_pos) {
+            self.stream_pos = new_stream_pos as usize;
+            Ok(self.stream_pos as u64)
         } else {
             Err(Error::EndOfFile)
         }
     }
 
     fn stream_position(&mut self) -> Result<u64, Error> {
-        Ok(self.pos as u64)
+        Ok(self.stream_pos as u64)
     }
 
     fn stream_len(&mut self) -> Result<u64, Error> {
@@ -148,7 +140,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::Start(4)), Ok(4));
-        assert_eq!(stream.pos, 4);
+        assert_eq!(stream.stream_pos, 4);
     }
 
     #[test]
@@ -156,7 +148,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::Start(9)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 
     #[test]
@@ -165,7 +157,7 @@ mod tests {
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::Current(5)), Ok(5));
         assert_eq!(stream.seek(SeekFrom::Current(-2)), Ok(3));
-        assert_eq!(stream.pos, 3);
+        assert_eq!(stream.stream_pos, 3);
     }
 
     #[test]
@@ -173,7 +165,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::Current(9)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 
     #[test]
@@ -181,7 +173,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 
     #[test]
@@ -189,7 +181,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::End(-3)), Ok(4));
-        assert_eq!(stream.pos, 4);
+        assert_eq!(stream.stream_pos, 4);
     }
 
     #[test]
@@ -197,7 +189,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::End(2)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 
     #[test]
@@ -205,6 +197,6 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         assert_eq!(stream.seek(SeekFrom::End(-12)), Err(Error::EndOfFile));
-        assert_eq!(stream.pos, 0);
+        assert_eq!(stream.stream_pos, 0);
     }
 }

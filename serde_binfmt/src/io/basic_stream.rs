@@ -56,6 +56,16 @@ pub trait Seek {
     }
 }
 
+impl SeekFrom {
+    pub fn absolute(&self, stream_pos: u64, stream_len: u64) -> i64 {
+        match self {
+            SeekFrom::Start(offset) => *offset as i64,
+            SeekFrom::End(offset) => (stream_len as i64) + offset,
+            SeekFrom::Current(offset) => (stream_pos as i64) + offset,
+        }
+    }
+}
+
 #[cfg(feature = "std")]
 impl From<SeekFrom> for std::io::SeekFrom {
     fn from(value: SeekFrom) -> Self {
@@ -67,27 +77,36 @@ impl From<SeekFrom> for std::io::SeekFrom {
     }
 }
 
-#[cfg(feature = "std")]
-impl<T: std::io::Read> Read for T {
+impl<T: Read + ?Sized> Read for &mut T {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
-        <Self as std::io::Read>::read_exact(self, bytes).map_err(|err| err.into())
+        (**self).read(bytes)
     }
 }
 
-#[cfg(feature = "std")]
-impl<T: std::io::Write> Write for T {
+impl<T: Write + ?Sized> Write for &mut T {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        <Self as std::io::Write>::write_all(self, bytes).map_err(|err| err.into())
+        (**self).write(bytes)
     }
 }
 
-#[cfg(feature = "std")]
-impl<T: std::io::Seek> Seek for T {
+impl<T: Seek + ?Sized> Seek for &mut T {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error> {
-        <Self as std::io::Seek>::seek(self, pos.into()).map_err(|err| err.into())
+        (**self).seek(pos)
+    }
+
+    fn rewind(&mut self) -> Result<(), Error> {
+        (**self).rewind()
+    }
+
+    fn stream_len(&mut self) -> Result<u64, Error> {
+        (**self).stream_len()
     }
 
     fn stream_position(&mut self) -> Result<u64, Error> {
-        <Self as std::io::Seek>::stream_position(self).map_err(|err| err.into())
+        (**self).stream_position()
+    }
+
+    fn seek_relative(&mut self, offset: i64) -> Result<(), Error> {
+        (**self).seek_relative(offset)
     }
 }
