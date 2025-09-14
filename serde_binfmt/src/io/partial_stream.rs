@@ -10,7 +10,7 @@ pub struct PartialStream<Stream> {
 }
 
 impl<Stream> PartialStream<Stream> {
-    pub fn take(self) -> Stream {
+    pub fn into_inner(self) -> Stream {
         self.stream
     }
 }

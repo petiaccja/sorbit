@@ -2,8 +2,8 @@ use serde_binfmt::{
     bit_field,
     byte_order::ByteOrder,
     error::Error,
-    io::GrowingMemoryStream,
-    serialize::{Serialize, Serializer, StreamSerializer},
+    io::{GrowingMemoryStream, Read},
+    serialize::{DeferredSerialize, DeferredSerializer, Serializer, StreamSerializer},
 };
 
 #[allow(unused)]
@@ -31,9 +31,20 @@ struct IPv4Header {
     destination_address: u32,
 }
 
-impl Serialize for IPv4Header {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Ok, S::Error> {
-        serializer.change_byte_order(ByteOrder::BigEndian, |s| {
+fn checksum(mut reader: impl Read) -> u16 {
+    let mut checksum = 0u32;
+    let mut bytes = [0u8; 2];
+    while let Ok(_) = reader.read(bytes.as_mut_slice()) {
+        let word = u16::from_be_bytes(bytes);
+        checksum += word as u32;
+        checksum = (checksum >> 16) + (checksum & 0xFFFF);
+    }
+    !(checksum as u16)
+}
+
+impl DeferredSerialize for IPv4Header {
+    fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Ok, S::Error> {
+        let (section, checksum_section) = serializer.change_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 s.serialize_u8(bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap())?;
                 s.serialize_u8(bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap())?;
@@ -49,12 +60,18 @@ impl Serialize for IPv4Header {
                 )?;
                 s.serialize_u8(self.time_to_live)?;
                 s.serialize_u8(self.protocol)?;
-                s.serialize_u16(self.header_checksum)?;
+                let checksum_section = s.serialize_u16(0u16)?;
                 s.serialize_u32(self.source_address)?;
                 s.serialize_u32(self.destination_address)?;
-                Ok(())
+                Ok(checksum_section)
             })
-        })
+            .map(|output| output.1)
+        })?;
+        let checksum = serializer.read_section(&section, |reader| checksum(reader))?;
+        serializer.update_section(&checksum_section, |s| {
+            s.change_byte_order(ByteOrder::BigEndian, |s| s.serialize_u16(checksum))
+        })?;
+        Ok(section)
     }
 }
 
@@ -81,7 +98,7 @@ fn serialize_ipv4_header() -> Result<(), Error> {
     let expected = [
         0x45, 0x00, 0x06, 0x00,
         0x00, 0x00, 0b0010_0000, 0x00,
-        0x0C, 0x11, 0x00, 0x00,
+        0x0C, 0x11, 0xde, 0xee,
         0x73, 0x45, 0x78, 0x23,
         0x88, 0x36, 0x36, 0x60
     ];

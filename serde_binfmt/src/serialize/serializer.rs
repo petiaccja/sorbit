@@ -1,9 +1,5 @@
-use std::process::Output;
-
-use crate::{
-    byte_order::ByteOrder,
-    io::{Read, Seek},
-};
+use crate::byte_order::ByteOrder;
+use crate::io::{Read, Seek};
 
 pub trait Serializer: Sized {
     type Ok;
@@ -27,13 +23,13 @@ pub trait Serializer: Sized {
     fn serialize_composite<O>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<(Self::Ok, O), Self::Error>;
 
     fn change_byte_order<O>(
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<Self::Ok, Self::Error>;
+    ) -> Result<(Self::Ok, O), Self::Error>;
 }
 
 pub trait Section {
@@ -46,15 +42,15 @@ pub trait DeferredSerializer: Serializer<Ok: Section> {
     type SectionSerializer: Serializer<Ok = Self::Ok, Error = Self::Error>;
     type SectionReader: Read + Seek;
 
-    fn update_section(
+    fn update_section<O>(
         &mut self,
-        section: Self::Ok,
-        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<(), Self::Error>,
-    ) -> Result<(), Self::Error>;
+        section: &Self::Ok,
+        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<O, Self::Error>,
+    ) -> Result<O, Self::Error>;
 
     fn read_section<Output>(
         &mut self,
-        section: Self::Ok,
+        section: &Self::Ok,
         analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
-    ) -> Output;
+    ) -> Result<Output, Self::Error>;
 }
