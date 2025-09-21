@@ -3,7 +3,7 @@ use serde_binfmt::{
     byte_order::ByteOrder,
     error::Error,
     io::{GrowingMemoryStream, Read},
-    serialize::{DeferredSerialize, DeferredSerializer, DataSerializer, StreamSerializer, Serializer},
+    serialize::{DeferredSerialize, DeferredSerializer, Serializer, StreamSerializer},
 };
 
 #[allow(unused)]

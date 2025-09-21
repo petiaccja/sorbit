@@ -1,5 +1,5 @@
 use crate::io::{PartialStream, Read, Seek, SeekFrom, Write};
-use crate::serialize::serializer::{DataSerializer, UpdateableSerializer};
+use crate::serialize::serializer::{Lookback, SerializerOutput};
 
 use super::Serializer;
 use crate::byte_order::ByteOrder;
@@ -118,9 +118,29 @@ impl<Stream: Write> StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Write> DataSerializer for StreamSerializer<Stream> {
+impl<Stream: Write> SerializerOutput for StreamSerializer<Stream> {
     type Success = Section;
     type Error = Error;
+}
+
+impl<Stream: Write> Serializer for StreamSerializer<Stream> {
+    type CompositeSerializer = Self;
+    type ByteOrderSerializer = Self;
+
+    fn serialize_composite<O>(
+        &mut self,
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
+    ) -> Result<Self::Success, Self::Error> {
+        self.nest(serialize_members, None, Some(self.stream_len))
+    }
+
+    fn with_byte_order<O>(
+        &mut self,
+        byte_order: ByteOrder,
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
+    ) -> Result<Self::Success, Self::Error> {
+        self.nest(serialize_members, Some(byte_order), None)
+    }
 
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error> {
         self.write(&[value as u8])
@@ -187,27 +207,7 @@ impl<Stream: Write> DataSerializer for StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Read + Write + Seek> Serializer for StreamSerializer<Stream> {
-    type CompositeSerializer = Self;
-    type ByteOrderSerializer = Self;
-
-    fn serialize_composite<O>(
-        &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
-        self.nest(serialize_members, None, Some(self.stream_len))
-    }
-
-    fn with_byte_order<O>(
-        &mut self,
-        byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
-        self.nest(serialize_members, Some(byte_order), None)
-    }
-}
-
-impl<Stream: Read + Write + Seek> UpdateableSerializer for StreamSerializer<Stream> {
+impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
     type SectionSerializer = StreamSerializer<PartialStream<Stream>>;
     type SectionReader = PartialStream<Stream>;
 

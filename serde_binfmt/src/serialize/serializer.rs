@@ -7,9 +7,14 @@ pub trait Section {
     fn end(&self) -> u64;
 }
 
-pub trait DataSerializer {
+pub trait SerializerOutput {
     type Success;
     type Error;
+}
+
+pub trait Serializer: SerializerOutput {
+    type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
+    type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;
     fn serialize_u8(&mut self, value: u8) -> Result<Self::Success, Self::Error>;
@@ -26,11 +31,6 @@ pub trait DataSerializer {
     fn align(&mut self, multiple_of: u64) -> Result<Self::Success, Self::Error>;
     fn set_byte_order(&mut self, byte_order: ByteOrder) -> ByteOrder;
     fn get_byte_order(&self) -> ByteOrder;
-}
-
-pub trait Serializer: DataSerializer {
-    type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
-    type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
     fn serialize_composite<O>(
         &mut self,
@@ -44,8 +44,8 @@ pub trait Serializer: DataSerializer {
     ) -> Result<Self::Success, Self::Error>;
 }
 
-pub trait UpdateableSerializer: DataSerializer {
-    type SectionSerializer: UpdateableSerializer<Success = Self::Success, Error = Self::Error>;
+pub trait Lookback: SerializerOutput {
+    type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
     type SectionReader: Read + Seek;
 
     fn update_section<O>(
@@ -62,13 +62,11 @@ pub trait UpdateableSerializer: DataSerializer {
 }
 
 pub trait DeferredSerializer:
-    Serializer<CompositeSerializer: UpdateableSerializer, ByteOrderSerializer: UpdateableSerializer>
-    + UpdateableSerializer<SectionSerializer: Serializer>
+    Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
 {
 }
 
 impl<S> DeferredSerializer for S where
-    S: Serializer<CompositeSerializer: UpdateableSerializer, ByteOrderSerializer: UpdateableSerializer>
-        + UpdateableSerializer<SectionSerializer: Serializer>
+    S: Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
 {
 }
