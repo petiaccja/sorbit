@@ -44,7 +44,8 @@ fn checksum(mut reader: impl Read) -> u16 {
 
 impl DeferredSerialize for IPv4Header {
     fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Ok, S::Error> {
-        let (section, checksum_section) = serializer.change_byte_order(ByteOrder::BigEndian, |s| {
+        let mut checksum_section = None;
+        let composite_section = serializer.change_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 s.serialize_u8(bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap())?;
                 s.serialize_u8(bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap())?;
@@ -60,18 +61,16 @@ impl DeferredSerialize for IPv4Header {
                 )?;
                 s.serialize_u8(self.time_to_live)?;
                 s.serialize_u8(self.protocol)?;
-                let checksum_section = s.serialize_u16(0u16)?;
+                checksum_section = s.serialize_u16(0u16)?.into();
                 s.serialize_u32(self.source_address)?;
-                s.serialize_u32(self.destination_address)?;
-                Ok(checksum_section)
+                s.serialize_u32(self.destination_address)
             })
-            .map(|output| output.1)
         })?;
-        let checksum = serializer.read_section(&section, |reader| checksum(reader))?;
-        serializer.update_section(&checksum_section, |s| {
+        let checksum = serializer.read_section(&composite_section, |reader| checksum(reader))?;
+        serializer.update_section(&checksum_section.as_ref().unwrap(), |s| {
             s.change_byte_order(ByteOrder::BigEndian, |s| s.serialize_u16(checksum))
         })?;
-        Ok(section)
+        Ok(composite_section)
     }
 }
 

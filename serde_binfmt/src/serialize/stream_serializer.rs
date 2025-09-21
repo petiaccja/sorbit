@@ -65,7 +65,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
         serialize_members: impl FnOnce(&mut <Self as Serializer>::Nested) -> Result<O, <Self as Serializer>::Error>,
         change_byte_order: Option<ByteOrder>,
         change_base: Option<u64>,
-    ) -> Result<(<Self as Serializer>::Ok, O), <Self as Serializer>::Error> {
+    ) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
         // Borrow self's buffer and create a nested serializer.
         let mut nested = Self {
             stream: self.stream.take(),
@@ -82,7 +82,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
             self.stream = stream;
             self.stream_len = stream_len;
         };
-        result.map(|output| (Section(start_pos..self.stream_len), output))
+        result.map(|_| Section(start_pos..self.stream_len))
     }
 
     fn write(&mut self, bytes: &[u8]) -> Result<<Self as Serializer>::Ok, <Self as Serializer>::Error> {
@@ -170,7 +170,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     fn serialize_composite<O>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<(Self::Ok, O), Self::Error> {
+    ) -> Result<Self::Ok, Self::Error> {
         self.nest(serialize_members, None, Some(self.stream_len))
     }
 
@@ -178,7 +178,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<(Self::Ok, O), Self::Error> {
+    ) -> Result<Self::Ok, Self::Error> {
         self.nest(serialize_members, Some(byte_order), None)
     }
 

@@ -23,13 +23,13 @@ pub trait Serializer: Sized {
     fn serialize_composite<O>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<(Self::Ok, O), Self::Error>;
+    ) -> Result<Self::Ok, Self::Error>;
 
     fn change_byte_order<O>(
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::Nested) -> Result<O, Self::Error>,
-    ) -> Result<(Self::Ok, O), Self::Error>;
+    ) -> Result<Self::Ok, Self::Error>;
 }
 
 pub trait Section {
