@@ -12,4 +12,6 @@ pub mod error;
 pub mod io;
 pub mod serialize;
 
+mod types;
+
 extern crate self as serde_binfmt;

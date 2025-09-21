@@ -3,7 +3,7 @@ use serde_binfmt::{
     byte_order::ByteOrder,
     error::Error,
     io::{GrowingMemoryStream, Read},
-    serialize::{DeferredSerialize, DeferredSerializer, Serializer, StreamSerializer},
+    serialize::{DeferredSerialize, DeferredSerializer, DataSerializer, StreamSerializer, Serializer},
 };
 
 #[allow(unused)]
@@ -43,9 +43,9 @@ fn checksum(mut reader: impl Read) -> u16 {
 }
 
 impl DeferredSerialize for IPv4Header {
-    fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Ok, S::Error> {
+    fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
         let mut checksum_section = None;
-        let composite_section = serializer.change_byte_order(ByteOrder::BigEndian, |s| {
+        let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 s.serialize_u8(bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap())?;
                 s.serialize_u8(bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap())?;
@@ -66,9 +66,9 @@ impl DeferredSerialize for IPv4Header {
                 s.serialize_u32(self.destination_address)
             })
         })?;
-        let checksum = serializer.read_section(&composite_section, |reader| checksum(reader))?;
+        let checksum = serializer.analyze_section(&composite_section, |reader| checksum(reader))?;
         serializer.update_section(&checksum_section.as_ref().unwrap(), |s| {
-            s.change_byte_order(ByteOrder::BigEndian, |s| s.serialize_u16(checksum))
+            s.with_byte_order(ByteOrder::BigEndian, |s| s.serialize_u16(checksum))
         })?;
         Ok(composite_section)
     }
