@@ -9,9 +9,3 @@ pub trait Serialize {
 pub trait DeferredSerialize {
     fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
-
-impl<T: Serialize> DeferredSerialize for T {
-    fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
-        self.serialize(serializer)
-    }
-}

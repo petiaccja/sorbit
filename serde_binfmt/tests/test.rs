@@ -3,7 +3,7 @@ use serde_binfmt::{
     byte_order::ByteOrder,
     error::Error,
     io::{GrowingMemoryStream, Read},
-    serialize::{DeferredSerialize, DeferredSerializer, Serializer, StreamSerializer},
+    serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, StreamSerializer},
 };
 
 #[allow(unused)]
@@ -47,28 +47,27 @@ impl DeferredSerialize for IPv4Header {
         let mut checksum_section = None;
         let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
-                s.serialize_u8(bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap())?;
-                s.serialize_u8(bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap())?;
-                s.serialize_u16(self.total_length)?;
-                s.serialize_u16(self.identification)?;
-                s.serialize_u16(
-                    bit_field!(u16 => {
-                        (self.dont_fragment, 14..=14),
-                        (self.more_fragments, 13..=13),
-                        (self.fragment_offset, 0..13)
-                    })
-                    .unwrap(),
-                )?;
-                s.serialize_u8(self.time_to_live)?;
-                s.serialize_u8(self.protocol)?;
-                checksum_section = s.serialize_u16(0u16)?.into();
-                s.serialize_u32(self.source_address)?;
-                s.serialize_u32(self.destination_address)
+                bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
+                bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap().serialize(s)?;
+                self.total_length.serialize(s)?;
+                self.identification.serialize(s)?;
+                bit_field!(u16 => {
+                    (self.dont_fragment, 14..=14),
+                    (self.more_fragments, 13..=13),
+                    (self.fragment_offset, 0..13)
+                })
+                .unwrap()
+                .serialize(s)?;
+                self.time_to_live.serialize(s)?;
+                self.protocol.serialize(s)?;
+                checksum_section = 0u16.serialize(s)?.into();
+                self.source_address.serialize(s)?;
+                self.destination_address.serialize(s)
             })
         })?;
         let checksum = serializer.analyze_section(&composite_section, |reader| checksum(reader))?;
         serializer.update_section(&checksum_section.as_ref().unwrap(), |s| {
-            s.with_byte_order(ByteOrder::BigEndian, |s| s.serialize_u16(checksum))
+            s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
         })?;
         Ok(composite_section)
     }
