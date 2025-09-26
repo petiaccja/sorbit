@@ -16,20 +16,27 @@ where
 #[macro_export]
 macro_rules! bit_field {
     ($packed_ty:ty => { $(($value:expr, $to_bits:expr)),*}) => {
-        move || -> ::core::result::Result<$packed_ty, ()> {
+        {
             let mut bit_field = ::serde_binfmt::bit::BitField::<$packed_ty>::new();
-            $(bit_field.pack($value, $to_bits).map_err(|_| ())?;)*
-            ::core::result::Result::Ok(bit_field.into_bits())
-        }()
+            let success = [$(bit_field.pack($value, $to_bits).is_ok(),)*];
+            if success.iter().all(|s| *s) {
+                ::core::result::Result::Ok(bit_field.into_bits())
+            } else {
+                Err(())
+            }
+        }
     };
 }
 
 #[macro_export]
 macro_rules! unpack {
     ($bit_field:expr => { $(($self_ty:ty, $to_bits:expr)),*}) => {
-        move || -> ::core::result::Result<($($self_ty,)*), ()> {
-            ::core::result::Result::Ok(($($bit_field.unpack::<$self_ty, _, _>($to_bits).map_err(|_| ())?,)*))
-        }()
+        {
+            let bit_field = ::serde_binfmt::bit::BitField::from_bits($bit_field);
+            move || -> ::core::result::Result<($($self_ty,)*), ()> {
+                ::core::result::Result::Ok(($(bit_field.unpack::<$self_ty, _, _>($to_bits).map_err(|_| ())?,)*))
+            }()
+        }
     };
 }
 
@@ -209,15 +216,13 @@ mod tests {
 
     #[test]
     fn unpack_macro_one() {
-        let bit_field = BitField::from_bits(0b0010_0111_u8);
-        let unpacked = unpack!(bit_field => { (u8, 0..2) });
+        let unpacked = unpack!(0b0010_0111_u8 => { (u8, 0..2) });
         assert_eq!(unpacked, Ok((0b11u8,)));
     }
 
     #[test]
     fn unpack_macro_multiple() {
-        let bit_field = BitField::from_bits(0b0010_0111_u8);
-        let unpacked = unpack!(bit_field => { (u8, 0..2), (u8, 2..6) });
+        let unpacked = unpack!(0b0010_0111_u8 => { (u8, 0..2), (u8, 2..6) });
         assert_eq!(unpacked, Ok((0b11u8, 0b1001u8)));
     }
 }

@@ -1,12 +1,14 @@
 use serde_binfmt::{
     bit_field,
     byte_order::ByteOrder,
+    deserialize::{Deserialize, Deserializer, StreamDeserializer},
     error::Error,
-    io::{GrowingMemoryStream, Read},
+    io::{FixedMemoryStream, GrowingMemoryStream, Read},
     serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, StreamSerializer},
+    unpack,
 };
 
-#[allow(unused)]
+#[derive(Debug, PartialEq, Eq)]
 struct IPv4Header {
     // #[bits = 4]
     version: u8,
@@ -26,7 +28,8 @@ struct IPv4Header {
     fragment_offset: u16,
     time_to_live: u8,
     protocol: u8,
-    header_checksum: u16, // Checksum calculation?
+    // #[deferred(checksum(self))]
+    header_checksum: u16,
     source_address: u32,
     destination_address: u32,
 }
@@ -48,7 +51,7 @@ impl DeferredSerialize for IPv4Header {
         let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
-                bit_field!(u8 => {(self.dscp, 0..4), (self.ecn, 4..8)}).unwrap().serialize(s)?;
+                bit_field!(u8 => {(self.dscp, 4..8), (self.ecn, 0..4)}).unwrap().serialize(s)?;
                 self.total_length.serialize(s)?;
                 self.identification.serialize(s)?;
                 bit_field!(u16 => {
@@ -73,9 +76,45 @@ impl DeferredSerialize for IPv4Header {
     }
 }
 
+impl Deserialize for IPv4Header {
+    fn deserialize<D: Deserializer>(deserializer: &mut D) -> Result<Self, D::Error> {
+        deserializer.with_byte_order(ByteOrder::BigEndian, |s| {
+            s.deserialize_composite(|s| {
+                let (version, ihl) = unpack!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) }).unwrap();
+                let (dscp, ecn) = unpack!(u8::deserialize(s)? => {(u8, 4..8), (u8, 0..4)}).unwrap();
+                let total_length = u16::deserialize(s)?;
+                let identification = u16::deserialize(s)?;
+                let (dont_fragment, more_fragments, fragment_offset) =
+                    unpack!(u16::deserialize(s)? => { (bool, 14..=14), (bool, 13..=13), (u16, 0..13)}).unwrap();
+                let time_to_live = u8::deserialize(s)?;
+                let protocol = u8::deserialize(s)?;
+                let header_checksum = u16::deserialize(s)?;
+                let source_address = u32::deserialize(s)?;
+                let destination_address = u32::deserialize(s)?;
+                Ok(IPv4Header {
+                    version,
+                    ihl,
+                    dscp,
+                    ecn,
+                    total_length,
+                    identification,
+                    dont_fragment,
+                    more_fragments,
+                    fragment_offset,
+                    time_to_live,
+                    protocol,
+                    header_checksum,
+                    source_address,
+                    destination_address,
+                })
+            })
+        })
+    }
+}
+
 #[test]
 fn serialize_ipv4_header() -> Result<(), Error> {
-    let header = IPv4Header {
+    let value = IPv4Header {
         version: 4,
         ihl: 5,
         dscp: 0,
@@ -87,22 +126,27 @@ fn serialize_ipv4_header() -> Result<(), Error> {
         fragment_offset: 0,
         time_to_live: 12,
         protocol: 17,
-        header_checksum: 0x00,
+        header_checksum: 0xDEEE,
         source_address: 0x73457823,
         destination_address: 0x88363660,
     };
 
     #[rustfmt::skip]
-    let expected = [
+    let bytes = [
         0x45, 0x00, 0x06, 0x00,
         0x00, 0x00, 0b0010_0000, 0x00,
-        0x0C, 0x11, 0xde, 0xee,
+        0x0C, 0x11, 0xDE, 0xEE,
         0x73, 0x45, 0x78, 0x23,
         0x88, 0x36, 0x36, 0x60
     ];
-
-    let mut s = StreamSerializer::new(GrowingMemoryStream::new());
-    header.serialize(&mut s)?;
-    assert_eq!(&s.take().take(), &expected);
+    {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new());
+        value.serialize(&mut s)?;
+        assert_eq!(&s.take().take(), &bytes);
+    }
+    {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new(&bytes));
+        assert_eq!(IPv4Header::deserialize(&mut s), Ok(value));
+    }
     Ok(())
 }

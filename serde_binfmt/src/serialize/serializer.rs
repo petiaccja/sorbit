@@ -29,8 +29,6 @@ pub trait Serializer: SerializerOutput {
     fn serialize_slice(&mut self, value: &[u8]) -> Result<Self::Success, Self::Error>;
     fn pad(&mut self, until: u64) -> Result<Self::Success, Self::Error>;
     fn align(&mut self, multiple_of: u64) -> Result<Self::Success, Self::Error>;
-    fn set_byte_order(&mut self, byte_order: ByteOrder) -> ByteOrder;
-    fn get_byte_order(&self) -> ByteOrder;
 
     fn serialize_composite<O>(
         &mut self,

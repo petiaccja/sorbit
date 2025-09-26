@@ -7,13 +7,9 @@ use crate::error::Error;
 
 pub struct StreamSerializer<Stream: Write> {
     stream: Option<Stream>,
-    // New items will be serialized using this byte order.
     byte_order: ByteOrder,
-    // The current length of the stream.
-    stream_len: u64,
-    // The offset into `buffer` at which the current composite object begins.
-    // This is important for alignment and padding within the composite.
-    composite_base: u64,
+    stream_pos: u64,     // The current length of the stream.
+    composite_base: u64, // Marks the stream position at which the current composite begins.
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -42,7 +38,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// let serializer = StreamSerializer::new(stream).little_endian();
     /// ```
     pub fn new(stream: Stream) -> Self {
-        Self { stream: Some(stream), byte_order: ByteOrder::BigEndian, stream_len: 0, composite_base: 0 }
+        Self { stream: Some(stream), byte_order: ByteOrder::BigEndian, stream_pos: 0, composite_base: 0 }
     }
 
     /// Create a new serializer that uses the **big endian** byte order.
@@ -60,6 +56,38 @@ impl<Stream: Write> StreamSerializer<Stream> {
         self.stream.expect(UNWRAP_STREAM_MSG)
     }
 
+    fn write(&mut self, bytes: &[u8]) -> Result<Section, Error> {
+        let start_pos = self.stream_pos;
+        let stream = self.stream.as_mut().expect(UNWRAP_STREAM_MSG);
+        let result = stream.write(bytes);
+        if result.is_ok() {
+            self.stream_pos += bytes.len() as u64;
+        }
+        result.map(|_| Section(start_pos..self.stream_pos))
+    }
+
+    fn write_until(&mut self, until: u64, value: u8) -> Result<Section, Error> {
+        let start_pos = self.stream_pos;
+        let mut num_to_write = until as i64 - self.stream_pos as i64;
+        if num_to_write > 0 {
+            while num_to_write >= 64 as i64 {
+                self.write(&[value; 64])?;
+                num_to_write -= 64;
+            }
+            while num_to_write > 0 as i64 {
+                self.write(&[value])?;
+                num_to_write -= 1;
+            }
+            Ok(Section(start_pos..self.stream_pos))
+        } else {
+            Err(Error::LengthExceedsPadding)
+        }
+    }
+
+    fn current_composite_len(&self) -> u64 {
+        self.stream_pos - self.composite_base
+    }
+
     fn nest<O>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self) -> Result<O, Error>,
@@ -70,51 +98,19 @@ impl<Stream: Write> StreamSerializer<Stream> {
         let mut nested = Self {
             stream: self.stream.take(),
             byte_order: change_byte_order.unwrap_or(self.byte_order),
-            stream_len: self.stream_len,
+            stream_pos: self.stream_pos,
             composite_base: change_base.unwrap_or(self.composite_base),
         };
-        let start_pos = self.stream_len;
+        let start_pos = self.stream_pos;
         let result = serialize_members(&mut nested);
         // Explode nested and restore self's buffer.
         // Nested's byte order and base are discarded.
         {
-            let Self { stream, byte_order: _, stream_len, composite_base: _ } = nested;
+            let Self { stream, byte_order: _, stream_pos: stream_len, composite_base: _ } = nested;
             self.stream = stream;
-            self.stream_len = stream_len;
+            self.stream_pos = stream_len;
         };
-        result.map(|_| Section(start_pos..self.stream_len))
-    }
-
-    fn write(&mut self, bytes: &[u8]) -> Result<Section, Error> {
-        let start_pos = self.stream_len;
-        let stream = self.stream.as_mut().expect(UNWRAP_STREAM_MSG);
-        let result = stream.write(bytes);
-        if result.is_ok() {
-            self.stream_len += bytes.len() as u64;
-        }
-        result.map(|_| Section(start_pos..self.stream_len))
-    }
-
-    fn write_until(&mut self, until: u64, value: u8) -> Result<Section, Error> {
-        let start_pos = self.stream_len;
-        let mut num_to_write = until as i64 - self.stream_len as i64;
-        if num_to_write > 0 {
-            while num_to_write >= 64 as i64 {
-                self.write(&[value; 64])?;
-                num_to_write -= 64;
-            }
-            while num_to_write > 0 as i64 {
-                self.write(&[value])?;
-                num_to_write -= 1;
-            }
-            Ok(Section(start_pos..self.stream_len))
-        } else {
-            Err(Error::LengthExceedsPadding)
-        }
-    }
-
-    fn get_composite_len(&self) -> u64 {
-        self.stream_len - self.composite_base
+        result.map(|_| Section(start_pos..self.stream_pos))
     }
 }
 
@@ -126,21 +122,6 @@ impl<Stream: Write> SerializerOutput for StreamSerializer<Stream> {
 impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     type CompositeSerializer = Self;
     type ByteOrderSerializer = Self;
-
-    fn serialize_composite<O>(
-        &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
-        self.nest(serialize_members, None, Some(self.stream_len))
-    }
-
-    fn with_byte_order<O>(
-        &mut self,
-        byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
-        self.nest(serialize_members, Some(byte_order), None)
-    }
 
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error> {
         self.write(&[value as u8])
@@ -192,18 +173,25 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     }
 
     fn align(&mut self, multiple_of: u64) -> Result<Self::Success, Self::Error> {
-        let len = self.get_composite_len();
+        let len = self.current_composite_len();
         let aligned_len = (len + multiple_of - 1) / multiple_of * multiple_of;
         let global_until = self.composite_base + aligned_len;
         self.write_until(global_until, 0)
     }
 
-    fn set_byte_order(&mut self, byte_order: ByteOrder) -> ByteOrder {
-        core::mem::replace(&mut self.byte_order, byte_order)
+    fn serialize_composite<O>(
+        &mut self,
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
+    ) -> Result<Self::Success, Self::Error> {
+        self.nest(serialize_members, None, Some(self.stream_pos))
     }
 
-    fn get_byte_order(&self) -> ByteOrder {
-        self.byte_order
+    fn with_byte_order<O>(
+        &mut self,
+        byte_order: ByteOrder,
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
+    ) -> Result<Self::Success, Self::Error> {
+        self.nest(serialize_members, Some(byte_order), None)
     }
 }
 
@@ -229,7 +217,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
         let mut section_serializer = StreamSerializer::new(partial_stream);
         let result = update_section(&mut section_serializer);
         {
-            let Self::SectionSerializer { stream, byte_order: _, stream_len: _, composite_base: _ } =
+            let Self::SectionSerializer { stream, byte_order: _, stream_pos: _, composite_base: _ } =
                 section_serializer;
             self.stream = stream.expect(UNWRAP_STREAM_MSG).into_inner().into();
             self.stream.as_mut().expect(UNWRAP_STREAM_MSG).seek(SeekFrom::Start(stream_pos))?;
