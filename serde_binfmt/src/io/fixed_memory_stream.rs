@@ -2,22 +2,22 @@ use super::basic_stream::{Read, Seek, SeekFrom, Write};
 use crate::error::Error;
 
 #[derive(Debug)]
-pub struct FixedMemoryStream<'buffer> {
-    buffer: &'buffer mut [u8],
+pub struct FixedMemoryStream<Buffer> {
+    buffer: Buffer,
     stream_pos: usize,
 }
 
-impl<'buffer> FixedMemoryStream<'buffer> {
-    pub fn new(buffer: &'buffer mut [u8]) -> Self {
+impl<Buffer> FixedMemoryStream<Buffer> {
+    pub fn new(buffer: Buffer) -> Self {
         Self { buffer, stream_pos: 0 }
     }
 }
 
-impl<'buffer> Read for FixedMemoryStream<'buffer> {
+impl<Buffer: AsRef<[u8]>> Read for FixedMemoryStream<Buffer> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
-        if self.stream_pos + bytes.len() <= self.buffer.len() {
+        if self.stream_pos + bytes.len() <= self.buffer.as_ref().len() {
             let range = self.stream_pos..(self.stream_pos + bytes.len());
-            bytes.copy_from_slice(&self.buffer[range]);
+            bytes.copy_from_slice(&self.buffer.as_ref()[range]);
             self.stream_pos += bytes.len();
             Ok(())
         } else {
@@ -26,11 +26,11 @@ impl<'buffer> Read for FixedMemoryStream<'buffer> {
     }
 }
 
-impl<'buffer> Write for FixedMemoryStream<'buffer> {
+impl<Buffer: AsMut<[u8]>> Write for FixedMemoryStream<Buffer> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        if self.stream_pos + bytes.len() <= self.buffer.len() {
+        if self.stream_pos + bytes.len() <= self.buffer.as_mut().len() {
             let range = self.stream_pos..(self.stream_pos + bytes.len());
-            self.buffer[range].copy_from_slice(bytes);
+            self.buffer.as_mut()[range].copy_from_slice(bytes);
             self.stream_pos += bytes.len();
             Ok(())
         } else {
@@ -39,10 +39,10 @@ impl<'buffer> Write for FixedMemoryStream<'buffer> {
     }
 }
 
-impl<'buffer> Seek for FixedMemoryStream<'buffer> {
+impl<Buffer: AsRef<[u8]>> Seek for FixedMemoryStream<Buffer> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error> {
-        let new_stream_pos = pos.absolute(self.stream_pos as u64, self.buffer.len() as u64);
-        let seek_range = 0..=(self.buffer.len() as i64);
+        let new_stream_pos = pos.absolute(self.stream_pos as u64, self.buffer.as_ref().len() as u64);
+        let seek_range = 0..=(self.buffer.as_ref().len() as i64);
         if seek_range.contains(&new_stream_pos) {
             self.stream_pos = new_stream_pos as usize;
             Ok(self.stream_pos as u64)
@@ -56,7 +56,7 @@ impl<'buffer> Seek for FixedMemoryStream<'buffer> {
     }
 
     fn stream_len(&mut self) -> Result<u64, Error> {
-        Ok(self.buffer.len() as u64)
+        Ok(self.buffer.as_ref().len() as u64)
     }
 }
 
