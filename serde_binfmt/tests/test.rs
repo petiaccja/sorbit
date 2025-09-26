@@ -51,7 +51,7 @@ impl DeferredSerialize for IPv4Header {
         let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
-                bit_field!(u8 => {(self.dscp, 4..8), (self.ecn, 0..4)}).unwrap().serialize(s)?;
+                bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)}).unwrap().serialize(s)?;
                 self.total_length.serialize(s)?;
                 self.identification.serialize(s)?;
                 bit_field!(u16 => {
@@ -81,7 +81,7 @@ impl Deserialize for IPv4Header {
         deserializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.deserialize_composite(|s| {
                 let (version, ihl) = unpack!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) }).unwrap();
-                let (dscp, ecn) = unpack!(u8::deserialize(s)? => {(u8, 4..8), (u8, 0..4)}).unwrap();
+                let (dscp, ecn) = unpack!(u8::deserialize(s)? => {(u8, 2..8), (u8, 0..2)}).unwrap();
                 let total_length = u16::deserialize(s)?;
                 let identification = u16::deserialize(s)?;
                 let (dont_fragment, more_fragments, fragment_offset) =
