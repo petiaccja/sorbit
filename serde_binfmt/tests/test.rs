@@ -133,41 +133,42 @@ impl Deserialize for IPv4Header {
     }
 }
 
+const EXAMPLE_IPV4_HEADER: IPv4Header = IPv4Header {
+    version: 4,
+    ihl: 5,
+    dscp: 0,
+    ecn: 0,
+    total_length: 1536,
+    identification: 0,
+    dont_fragment: false,
+    more_fragments: true,
+    fragment_offset: 0,
+    time_to_live: 12,
+    protocol: 17,
+    header_checksum: 0xDEEE,
+    source_address: 0x73457823,
+    destination_address: 0x88363660,
+};
+
+#[rustfmt::skip]
+const EXAMPLE_IPV4_BYTES : [u8; 20] =    [
+    0x45, 0x00, 0x06, 0x00,
+    0x00, 0x00, 0b0010_0000, 0x00,
+    0x0C, 0x11, 0xDE, 0xEE,
+    0x73, 0x45, 0x78, 0x23,
+    0x88, 0x36, 0x36, 0x60
+];
+
 #[test]
 fn serialize_ipv4_header() -> Result<(), Error> {
-    let value = IPv4Header {
-        version: 4,
-        ihl: 5,
-        dscp: 0,
-        ecn: 0,
-        total_length: 1536,
-        identification: 0,
-        dont_fragment: false,
-        more_fragments: true,
-        fragment_offset: 0,
-        time_to_live: 12,
-        protocol: 17,
-        header_checksum: 0xDEEE,
-        source_address: 0x73457823,
-        destination_address: 0x88363660,
-    };
-
-    #[rustfmt::skip]
-    let bytes = [
-        0x45, 0x00, 0x06, 0x00,
-        0x00, 0x00, 0b0010_0000, 0x00,
-        0x0C, 0x11, 0xDE, 0xEE,
-        0x73, 0x45, 0x78, 0x23,
-        0x88, 0x36, 0x36, 0x60
-    ];
-    {
-        let mut s = StreamSerializer::new(GrowingMemoryStream::new());
-        value.serialize(&mut s)?;
-        assert_eq!(&s.take().take(), &bytes);
-    }
-    {
-        let mut s = StreamDeserializer::new(FixedMemoryStream::new(&bytes));
-        assert_eq!(IPv4Header::deserialize(&mut s), Ok(value));
-    }
+    let mut s = StreamSerializer::new(GrowingMemoryStream::new());
+    EXAMPLE_IPV4_HEADER.serialize(&mut s)?;
+    assert_eq!(&s.take().take(), &EXAMPLE_IPV4_BYTES);
     Ok(())
+}
+
+#[test]
+fn deserialize_ipv4_header() {
+    let mut s = StreamDeserializer::new(FixedMemoryStream::new(&EXAMPLE_IPV4_BYTES));
+    assert_eq!(IPv4Header::deserialize(&mut s), Ok(EXAMPLE_IPV4_HEADER));
 }
