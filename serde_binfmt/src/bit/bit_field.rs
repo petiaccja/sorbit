@@ -14,7 +14,7 @@ where
 }
 
 #[macro_export]
-macro_rules! bit_field {
+macro_rules! pack_bit_field {
     ($packed_ty:ty => { $(($value:expr, $to_bits:expr)),*}) => {
         {
             let mut bit_field = ::serde_binfmt::bit::BitField::<$packed_ty>::new();
@@ -29,7 +29,7 @@ macro_rules! bit_field {
 }
 
 #[macro_export]
-macro_rules! unpack {
+macro_rules! unpack_bit_field {
     ($bit_field:expr => { $(($self_ty:ty, $to_bits:expr)),*}) => {
         {
             let bit_field = ::serde_binfmt::bit::BitField::from_bits($bit_field);
@@ -204,25 +204,25 @@ mod tests {
 
     #[test]
     fn bit_field_macro_one() {
-        let value = bit_field!(u8 => { (0b11u8, 0..2) });
+        let value = pack_bit_field!(u8 => { (0b11u8, 0..2) });
         assert_eq!(value, Ok(0b0000_0011));
     }
 
     #[test]
     fn bit_field_macro_multiple() {
-        let value = bit_field!(u8 => { (0b11u8, 0..2), (0b1001u8, 2..6) });
+        let value = pack_bit_field!(u8 => { (0b11u8, 0..2), (0b1001u8, 2..6) });
         assert_eq!(value, Ok(0b0010_0111));
     }
 
     #[test]
     fn unpack_macro_one() {
-        let unpacked = unpack!(0b0010_0111_u8 => { (u8, 0..2) });
+        let unpacked = unpack_bit_field!(0b0010_0111_u8 => { (u8, 0..2) });
         assert_eq!(unpacked, Ok((0b11u8,)));
     }
 
     #[test]
     fn unpack_macro_multiple() {
-        let unpacked = unpack!(0b0010_0111_u8 => { (u8, 0..2), (u8, 2..6) });
+        let unpacked = unpack_bit_field!(0b0010_0111_u8 => { (u8, 0..2), (u8, 2..6) });
         assert_eq!(unpacked, Ok((0b11u8, 0b1001u8)));
     }
 }

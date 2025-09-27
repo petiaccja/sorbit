@@ -1,11 +1,11 @@
 use serde_binfmt::{
-    bit_field,
     byte_order::ByteOrder,
     deserialize::{Deserialize, Deserializer, StreamDeserializer},
     error::Error,
     io::{FixedMemoryStream, GrowingMemoryStream, Read},
+    pack_bit_field,
     serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, StreamSerializer},
-    unpack,
+    unpack_bit_field,
 };
 
 #[derive(Debug, PartialEq, Eq)]
@@ -50,11 +50,11 @@ impl DeferredSerialize for IPv4Header {
         let mut checksum_section = None;
         let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
-                bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
-                bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)}).unwrap().serialize(s)?;
+                pack_bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
+                pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)}).unwrap().serialize(s)?;
                 self.total_length.serialize(s)?;
                 self.identification.serialize(s)?;
-                bit_field!(u16 => {
+                pack_bit_field!(u16 => {
                     (self.dont_fragment, 14..=14),
                     (self.more_fragments, 13..=13),
                     (self.fragment_offset, 0..13)
@@ -80,12 +80,13 @@ impl Deserialize for IPv4Header {
     fn deserialize<D: Deserializer>(deserializer: &mut D) -> Result<Self, D::Error> {
         deserializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.deserialize_composite(|s| {
-                let (version, ihl) = unpack!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) }).unwrap();
-                let (dscp, ecn) = unpack!(u8::deserialize(s)? => {(u8, 2..8), (u8, 0..2)}).unwrap();
+                let (version, ihl) = unpack_bit_field!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) }).unwrap();
+                let (dscp, ecn) = unpack_bit_field!(u8::deserialize(s)? => {(u8, 2..8), (u8, 0..2)}).unwrap();
                 let total_length = u16::deserialize(s)?;
                 let identification = u16::deserialize(s)?;
                 let (dont_fragment, more_fragments, fragment_offset) =
-                    unpack!(u16::deserialize(s)? => { (bool, 14..=14), (bool, 13..=13), (u16, 0..13)}).unwrap();
+                    unpack_bit_field!(u16::deserialize(s)? => { (bool, 14..=14), (bool, 13..=13), (u16, 0..13)})
+                        .unwrap();
                 let time_to_live = u8::deserialize(s)?;
                 let protocol = u8::deserialize(s)?;
                 let header_checksum = u16::deserialize(s)?;
