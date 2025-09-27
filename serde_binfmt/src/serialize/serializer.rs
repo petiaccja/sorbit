@@ -42,7 +42,7 @@ pub trait Serializer: SerializerOutput {
     ) -> Result<Self::Success, Self::Error>;
 }
 
-pub trait Lookback: SerializerOutput {
+pub trait Lookback: SerializerOutput<Success: Section> {
     type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
     type SectionReader: Read + Seek;
 

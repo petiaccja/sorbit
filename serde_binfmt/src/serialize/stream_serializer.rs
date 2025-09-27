@@ -69,7 +69,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     fn write_until(&mut self, until: u64, value: u8) -> Result<Section, Error> {
         let start_pos = self.stream_pos;
         let mut num_to_write = until as i64 - self.stream_pos as i64;
-        if num_to_write > 0 {
+        if num_to_write >= 0 {
             while num_to_write >= 64 as i64 {
                 self.write(&[value; 64])?;
                 num_to_write -= 64;

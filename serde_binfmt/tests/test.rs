@@ -1,30 +1,31 @@
-use serde_binfmt::{
-    byte_order::ByteOrder,
-    deserialize::{Deserialize, Deserializer, StreamDeserializer},
-    error::Error,
-    io::{FixedMemoryStream, GrowingMemoryStream, Read},
-    pack_bit_field,
-    serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, StreamSerializer},
-    unpack_bit_field,
+use serde_binfmt::byte_order::ByteOrder;
+use serde_binfmt::deserialize::{Deserialize, Deserializer, StreamDeserializer};
+use serde_binfmt::error::Error;
+use serde_binfmt::io::{FixedMemoryStream, GrowingMemoryStream, Read};
+use serde_binfmt::pack_bit_field;
+use serde_binfmt::serialize::{
+    DeferredSerialize, DeferredSerializer, Section, Serialize, Serializer, StreamSerializer,
 };
+use serde_binfmt::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]
 struct IPv4Header {
-    // #[bits = 4]
+    // #[bit_field(b1: u8, 4..8)]
     version: u8,
-    // #[bits = 4]
+    // #[bit_field(b1, 0..4)]
+    // #[deferred(ihl(self))]
     ihl: u8,
-    // #[bits = 6]
+    // #[bit_field(b2: u8, 2..8)]
     dscp: u8,
-    // #[bits = 2]
+    // #[bit_field(b2, 0..2)]
     ecn: u8,
     total_length: u16,
     identification: u16,
-    // #[bits = 1]
+    // #[bit_field(b3: u16, 14)]
     dont_fragment: bool,
-    // #[bits = 1]
+    // #[bit_field(b3, 13)]
     more_fragments: bool,
-    // #[bits = 13]
+    // #[bit_field(b3, 0..13)]
     fragment_offset: u16,
     time_to_live: u8,
     protocol: u8,
@@ -34,23 +35,30 @@ struct IPv4Header {
     destination_address: u32,
 }
 
-fn checksum(mut reader: impl Read) -> u16 {
-    let mut checksum = 0u32;
-    let mut bytes = [0u8; 2];
-    while let Ok(_) = reader.read(bytes.as_mut_slice()) {
-        let word = u16::from_be_bytes(bytes);
-        checksum += word as u32;
-        checksum = (checksum >> 16) + (checksum & 0xFFFF);
+impl IPv4Header {
+    fn ihl(section: &impl Section) -> u8 {
+        core::cmp::min(u8::MAX as u64, section.len()) as u8 / 4
     }
-    !(checksum as u16)
+
+    fn checksum(mut reader: impl Read) -> u16 {
+        let mut checksum = 0u32;
+        let mut bytes = [0u8; 2];
+        while let Ok(_) = reader.read(bytes.as_mut_slice()) {
+            let word = u16::from_be_bytes(bytes);
+            checksum += word as u32;
+            checksum = (checksum >> 16) + (checksum & 0xFFFF);
+        }
+        !(checksum as u16)
+    }
 }
 
 impl DeferredSerialize for IPv4Header {
     fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+        let mut b1_section = None;
         let mut checksum_section = None;
-        let composite_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
+        let self_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
-                pack_bit_field!(u8 => {(self.version, 4..8), (self.ihl, 0..4)}).unwrap().serialize(s)?;
+                b1_section = 0u8.serialize(s)?.into(); // Version and IHL.
                 pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)}).unwrap().serialize(s)?;
                 self.total_length.serialize(s)?;
                 self.identification.serialize(s)?;
@@ -65,14 +73,25 @@ impl DeferredSerialize for IPv4Header {
                 self.protocol.serialize(s)?;
                 checksum_section = 0u16.serialize(s)?.into();
                 self.source_address.serialize(s)?;
-                self.destination_address.serialize(s)
+                self.destination_address.serialize(s)?;
+                s.align(4)
             })
         })?;
-        let checksum = serializer.analyze_section(&composite_section, |reader| checksum(reader))?;
-        serializer.update_section(&checksum_section.as_ref().unwrap(), |s| {
-            s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
-        })?;
-        Ok(composite_section)
+        // Update IHL.
+        {
+            let ihl = Self::ihl(&self_section);
+            serializer.update_section(&b1_section.as_ref().unwrap(), |s| {
+                pack_bit_field!(u8 => {(self.version, 4..8), (ihl, 0..4)}).unwrap().serialize(s)
+            })?;
+        }
+        // Update checksum.
+        {
+            let checksum = serializer.analyze_section(&self_section, |reader| Self::checksum(reader))?;
+            serializer.update_section(&checksum_section.as_ref().unwrap(), |s| {
+                s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
+            })?;
+        }
+        Ok(self_section)
     }
 }
 
@@ -92,6 +111,7 @@ impl Deserialize for IPv4Header {
                 let header_checksum = u16::deserialize(s)?;
                 let source_address = u32::deserialize(s)?;
                 let destination_address = u32::deserialize(s)?;
+                s.align(4)?;
                 Ok(IPv4Header {
                     version,
                     ihl,
