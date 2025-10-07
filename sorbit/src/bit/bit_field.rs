@@ -17,7 +17,7 @@ where
 macro_rules! pack_bit_field {
     ($packed_ty:ty => { $(($value:expr, $to_bits:expr)),*}) => {
         {
-            let mut bit_field = ::serde_binfmt::bit::BitField::<$packed_ty>::new();
+            let mut bit_field = ::sorbit::bit::BitField::<$packed_ty>::new();
             let success = [$(bit_field.pack($value, $to_bits).is_ok(),)*];
             if success.iter().all(|s| *s) {
                 ::core::result::Result::Ok(bit_field.into_bits())
@@ -32,7 +32,7 @@ macro_rules! pack_bit_field {
 macro_rules! unpack_bit_field {
     ($bit_field:expr => { $(($self_ty:ty, $to_bits:expr)),*}) => {
         {
-            let bit_field = ::serde_binfmt::bit::BitField::from_bits($bit_field);
+            let bit_field = ::sorbit::bit::BitField::from_bits($bit_field);
             move || -> ::core::result::Result<($($self_ty,)*), ()> {
                 ::core::result::Result::Ok(($(bit_field.unpack::<$self_ty, _, _>($to_bits).map_err(|_| ())?,)*))
             }()

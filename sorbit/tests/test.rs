@@ -1,21 +1,22 @@
-use serde_binfmt::byte_order::ByteOrder;
-use serde_binfmt::deserialize::{Deserialize, Deserializer, StreamDeserializer};
-use serde_binfmt::error::Error;
-use serde_binfmt::io::{FixedMemoryStream, GrowingMemoryStream, Read};
-use serde_binfmt::pack_bit_field;
-use serde_binfmt::serialize::{
-    DeferredSerialize, DeferredSerializer, Section, Serialize, Serializer, StreamSerializer,
-};
-use serde_binfmt::unpack_bit_field;
+use sorbit::byte_order::ByteOrder;
+use sorbit::deserialize::{Deserialize, Deserializer, StreamDeserializer};
+use sorbit::error::Error;
+use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
+use sorbit::pack_bit_field;
+use sorbit::serialize::{DeferredSerialize, DeferredSerializer, Section, Serialize, Serializer, StreamSerializer};
+use sorbit::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]
+// #[snap(4)]
 struct IPv4Header {
-    // #[bit_field(b1: u8, 4..8)]
+    // #![declare_bit_field(b1: u8)]
+    // #![declare_bit_field(b2: u8)]
+    // #[bit_field(b1, 4..8)]
     version: u8,
     // #[bit_field(b1, 0..4)]
     // #[deferred(ihl(self))]
     ihl: u8,
-    // #[bit_field(b2: u8, 2..8)]
+    // #[bit_field(b2, 2..8)]
     dscp: u8,
     // #[bit_field(b2, 0..2)]
     ecn: u8,

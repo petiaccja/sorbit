@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["serde_binfmt", "serde_binfmt_macros"]
+members = ["sorbit", "sorbit_derive", "sorbit_derive_impl"]
 
 # [patch.crates-io]
 # serde_binfmt = { path = "serde_binfmt" }

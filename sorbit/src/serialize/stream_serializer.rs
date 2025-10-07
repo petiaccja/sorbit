@@ -32,8 +32,8 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
     /// [`Self::little_endian`] functions to set a specific byte order:
     /// ```
-    /// # use serde_binfmt::serialize::StreamSerializer;
-    /// # use serde_binfmt::io::GrowingMemoryStream;
+    /// # use sorbit::serialize::StreamSerializer;
+    /// # use sorbit::io::GrowingMemoryStream;
     /// # let stream = GrowingMemoryStream::new();
     /// let serializer = StreamSerializer::new(stream).little_endian();
     /// ```

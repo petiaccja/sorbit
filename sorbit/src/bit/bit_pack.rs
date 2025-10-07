@@ -11,7 +11,7 @@ use super::bit_util::{bit_size_of, bit_size_of_val, keep_lowest_n_bits, zero_low
 ///
 /// For example, you create a 5-bit representation of an [`i8`]:
 /// ```
-/// use serde_binfmt::bit::BitPack;
+/// use sorbit::bit::BitPack;
 /// let value: i8 = -7; // 1111_1001
 /// let packed : u32 = value.pack(5).unwrap(); // ...0..._11001
 /// assert_eq!(packed, 0b11001);
@@ -44,7 +44,7 @@ where
 ///
 /// For example, you restore a 5-bit representation of an [`i8`]:
 /// ```
-/// use serde_binfmt::bit::BitUnpack;
+/// use sorbit::bit::BitUnpack;
 /// let packed : u32 = 0b_11001; // -7 in 5-bit two's complement.
 /// let value = i8::unpack(packed, 5).unwrap();
 /// assert_eq!(value, 0b_1111_1001_u8.cast_signed()); // -7 in 8-bit two's complement.

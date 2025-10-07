@@ -14,4 +14,4 @@ pub mod serialize;
 
 mod types;
 
-extern crate self as serde_binfmt;
+extern crate self as sorbit;
