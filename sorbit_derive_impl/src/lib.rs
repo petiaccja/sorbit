@@ -1,6 +1,4 @@
-#![allow(unused)]
-
-mod derive_enum;
-mod derive_object;
-mod derive_struct;
+pub mod derive_enum;
+pub mod derive_object;
+pub mod derive_struct;
 mod shared;

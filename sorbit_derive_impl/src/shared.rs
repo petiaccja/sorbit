@@ -1,12 +1,12 @@
 use std::fmt::Display;
+use std::ops::{Add, Range};
 use std::str::FromStr;
 
 use quote::ToTokens;
-use syn::meta::ParseNestedMeta;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
-use syn::{Attribute, Expr, ExprLit, Lit, LitInt, Meta, Path, Type, parse_quote};
+use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, parse_quote};
 
 pub fn sorbit_layout_path() -> Path {
     parse_quote! {sorbit::layout}
@@ -45,6 +45,54 @@ pub fn parse_type_meta(value: &mut Type, meta: &Meta) -> Result<(), syn::Error> 
         *value = list.parse_args()?;
         Ok(())
     }
+}
+
+pub fn parse_literal_range_meta<N>(value: &mut Option<Range<N>>, meta: &Meta) -> Result<(), syn::Error>
+where
+    N: FromStr<Err: Display> + Display + Add<Output = N> + TryFrom<u8> + Copy,
+{
+    if value.is_some() {
+        let path = meta.path().to_token_stream();
+        Err(syn::Error::new(meta.span(), format!("the parameter `{path}` has already been defined")))
+    } else {
+        let list = meta.require_list()?;
+        let expr = list.parse_args::<Expr>()?;
+        let one: N =
+            1.try_into().map_err(|_| syn::Error::new(meta.span(), "could not convert 1 to N, this is a bug"))?;
+        match expr {
+            Expr::Lit(ExprLit { attrs: _, lit: Lit::Int(lit_start) }) => {
+                let start: N = lit_start.base10_parse()?;
+                *value = Some(start..(start + one));
+            }
+            Expr::Range(ExprRange { attrs: _, start: Some(start), limits, end: Some(end) }) => {
+                let Expr::Lit(ExprLit { attrs: _, lit: Lit::Int(lit_start) }) = *start else {
+                    return Err(syn::Error::new(start.span(), "expected a literal integer"));
+                };
+                let Expr::Lit(ExprLit { attrs: _, lit: Lit::Int(lit_end) }) = *end else {
+                    return Err(syn::Error::new(end.span(), "expected a literal integer"));
+                };
+                let start: N = lit_start.base10_parse()?;
+                let end_unadjusted: N = lit_end.base10_parse()?;
+                let end = match limits {
+                    RangeLimits::HalfOpen(_) => end_unadjusted,
+                    RangeLimits::Closed(_) => end_unadjusted + one,
+                };
+                *value = Some(start..end);
+            }
+            _ => return Err(syn::Error::new(expr.span(), "expected a literal integer or a bounded literal range")),
+        }
+        Ok(())
+    }
+}
+
+pub fn parse_bit_field_name(meta: &Meta) -> Result<Ident, syn::Error> {
+    let meta_list = meta.require_list()?;
+    let meta_items = meta_list.parse_args_with(|parse_buffer: &syn::parse::ParseBuffer<'_>| {
+        Punctuated::<Meta, Comma>::parse_terminated(parse_buffer)
+    })?;
+    let name = meta_items.first().ok_or(syn::Error::new(meta.span(), "expected non-empty meta list"))?;
+    let name_path = name.require_path_only()?;
+    name_path.get_ident().cloned().ok_or(syn::Error::new(name_path.span(), "expected an identifier"))
 }
 
 pub fn parse_meta_list_attr(
