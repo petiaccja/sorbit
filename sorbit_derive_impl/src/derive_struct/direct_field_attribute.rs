@@ -27,7 +27,7 @@ impl DirectFieldAttribute {
             } else if attr.path() == &sorbit_bit_field_path() {
                 return Err(syn::Error::new(
                     attr.span(),
-                    "sorbit::bit_field attributes are not allowed on direct fields",
+                    "sorbit_bit_field attributes are not allowed on direct fields",
                 ));
             }
         }
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn parse_empty() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout()]
+            #[sorbit_layout()]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute::default();
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn parse_bit_field() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A)]
+            #[sorbit_bit_field(A)]
         );
         assert!(DirectFieldAttribute::parse(input.iter()).is_err());
     }
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn parse_offset() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(offset=4)]
+            #[sorbit_layout(offset=4)]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute { offset: Some(4), ..Default::default() };
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn parse_align() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(align=4)]
+            #[sorbit_layout(align=4)]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute { align: Some(4), ..Default::default() };
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn parse_round() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(round=4)]
+            #[sorbit_layout(round=4)]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute { round: Some(4), ..Default::default() };
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn parse_multiple_together() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(round=4, align=6)]
+            #[sorbit_layout(round=4, align=6)]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute { round: Some(4), align: Some(6), ..Default::default() };
@@ -128,8 +128,8 @@ mod tests {
     #[test]
     fn parse_multiple_separate() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(round=4)]
-            #[sorbit::layout(align=6)]
+            #[sorbit_layout(round=4)]
+            #[sorbit_layout(align=6)]
         );
         let result = DirectFieldAttribute::parse(input.iter())?;
         let expected = DirectFieldAttribute { round: Some(4), align: Some(6), ..Default::default() };
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn parse_invalid() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout(round=4, invalid_param=9)]
+            #[sorbit_layout(round=4, invalid_param=9)]
         );
         assert!(DirectFieldAttribute::parse(input.iter()).is_err());
     }

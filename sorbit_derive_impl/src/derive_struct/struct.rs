@@ -100,8 +100,8 @@ mod tests {
     fn parse_ambiguous_field_kind() {
         let input: DeriveInput = parse_quote! {
             struct Test {
-                #[sorbit::bit_field(A, repr(u8), bits(0..4))]
-                #[sorbit::layout(A, align=8)]
+                #[sorbit_bit_field(A, repr(u8), bits(0..4))]
+                #[sorbit_layout(A, align=8)]
                 foo: u8,
             }
         };
@@ -111,14 +111,14 @@ mod tests {
     #[test]
     fn parse_named_struct() -> Result<(), syn::Error> {
         let input: DeriveInput = parse_quote! {
-            #[sorbit::layout(len=16)]
-            #[sorbit::bit_field(A, repr(u8), round=4)]
+            #[sorbit_layout(len=16)]
+            #[sorbit_bit_field(A, repr(u8), round=4)]
             struct Test {
-                #[sorbit::bit_field(A, bits(0..4))]
+                #[sorbit_bit_field(A, bits(0..4))]
                 foo: u8,
-                #[sorbit::bit_field(A, bits(4..8))]
+                #[sorbit_bit_field(A, bits(4..8))]
                 bar: i8,
-                #[sorbit::layout(align=8)]
+                #[sorbit_layout(align=8)]
                 baz: u32,
             }
         };
@@ -158,14 +158,14 @@ mod tests {
     #[test]
     fn parse_tuple_struct() -> Result<(), syn::Error> {
         let input: DeriveInput = parse_quote! {
-            #[sorbit::layout(len=16)]
-            #[sorbit::bit_field(A, repr(u8), round=4)]
+            #[sorbit_layout(len=16)]
+            #[sorbit_bit_field(A, repr(u8), round=4)]
             struct Test (
-                #[sorbit::bit_field(A, bits(0..4))]
+                #[sorbit_bit_field(A, bits(0..4))]
                 u8,
-                #[sorbit::bit_field(A, bits(4..8))]
+                #[sorbit_bit_field(A, bits(4..8))]
                 i8,
-                #[sorbit::layout(align=8)]
+                #[sorbit_layout(align=8)]
                 u32,
             );
         };

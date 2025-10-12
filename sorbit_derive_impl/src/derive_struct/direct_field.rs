@@ -42,7 +42,7 @@ mod tests {
     #[test]
     fn parse_layout() -> Result<(), syn::Error> {
         let input: syn::Field = parse_quote! {
-            #[sorbit::layout(align=8)]
+            #[sorbit_layout(align=8)]
             foo: u8
         };
         let field = DirectField::parse(&input, 0)?;
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn parse_bit_field_decl() {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A, align=8)]
+            #[sorbit_bit_field(A, align=8)]
             foo: u8
         };
         assert!(DirectField::parse(&input, 0).is_err());
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn parse_bit_field_bits() {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A, bits(4..8))]
+            #[sorbit_bit_field(A, bits(4..8))]
             foo: u8
         };
         assert!(DirectField::parse(&input, 0).is_err());

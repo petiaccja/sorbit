@@ -37,7 +37,7 @@ mod tests {
     fn parse_none() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
             #[derive(Clone)]
-            #[sorbit::bit_field(A)]
+            #[sorbit_bit_field(A)]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: None, round: None });
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn parse_empty() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout()]
+            #[sorbit_layout()]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: None, round: None });
@@ -57,7 +57,7 @@ mod tests {
     #[test]
     fn parse_len() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout(len=4)]
+            #[sorbit_layout(len=4)]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: Some(4), round: None });
@@ -67,7 +67,7 @@ mod tests {
     #[test]
     fn parse_pad() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout(round=4)]
+            #[sorbit_layout(round=4)]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: None, round: Some(4) });
@@ -77,8 +77,8 @@ mod tests {
     #[test]
     fn parse_separate_parameters() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout(len=8)]
-            #[sorbit::layout(round=4)]
+            #[sorbit_layout(len=8)]
+            #[sorbit_layout(round=4)]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: Some(8), round: Some(4) });
@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn parse_colocated_parameters() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout(len=8, round=4)]
+            #[sorbit_layout(len=8, round=4)]
         };
         let attrs = StructAttribute::parse(input.iter())?;
         assert_eq!(attrs, StructAttribute { len: Some(8), round: Some(4) });
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn parse_unrecognized() {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::layout(foo)]
+            #[sorbit_layout(foo)]
         };
         assert!(StructAttribute::parse(input.iter()).is_err());
     }

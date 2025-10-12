@@ -76,7 +76,7 @@ mod tests {
     fn parse_none() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
             #[derive(Debug)]
-            #[sorbit::layout(round=4)]
+            #[sorbit_layout(round=4)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [];
@@ -87,7 +87,7 @@ mod tests {
     #[test]
     fn parse_empty() {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field()]
+            #[sorbit_bit_field()]
         };
         assert!(BitFieldAttribute::parse_all(input.iter()).is_err());
     }
@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn parse_name() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8))]
+            #[sorbit_bit_field(A, repr(u8))]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [("A".to_string(), BitFieldAttribute { repr: parse_quote!(u8), ..Default::default() })];
@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn parse_offset() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), offset=3)]
+            #[sorbit_bit_field(A, repr(u8), offset=3)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected =
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn parse_align() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), align=4)]
+            #[sorbit_bit_field(A, repr(u8), align=4)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected =
@@ -130,7 +130,7 @@ mod tests {
     #[test]
     fn parse_round() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), round=5)]
+            #[sorbit_bit_field(A, repr(u8), round=5)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected =
@@ -142,8 +142,8 @@ mod tests {
     #[test]
     fn parse_separate_parameters() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), offset=4)]
-            #[sorbit::bit_field(A, align=5)]
+            #[sorbit_bit_field(A, repr(u8), offset=4)]
+            #[sorbit_bit_field(A, align=5)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [(
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn parse_colocated_parameters() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), offset=4, align=5)]
+            #[sorbit_bit_field(A, repr(u8), offset=4, align=5)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [(
@@ -171,8 +171,8 @@ mod tests {
     #[test]
     fn parse_multiple_fields() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), offset=4)]
-            #[sorbit::bit_field(B, repr(u8), offset=5)]
+            #[sorbit_bit_field(A, repr(u8), offset=4)]
+            #[sorbit_bit_field(B, repr(u8), offset=5)]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn parse_ignored_parameters() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8), bits(4..6))]
+            #[sorbit_bit_field(A, repr(u8), bits(4..6))]
         };
         let bit_fields = BitFieldAttribute::parse_all(input.iter())?;
         let expected = [("A".to_string(), BitFieldAttribute { repr: parse_quote!(u8), ..Default::default() })];
@@ -197,8 +197,8 @@ mod tests {
     #[test]
     fn parse_redefined_parameters() {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, repr(u8))]
-            #[sorbit::bit_field(A, repr(u8))]
+            #[sorbit_bit_field(A, repr(u8))]
+            #[sorbit_bit_field(A, repr(u8))]
         };
         assert!(BitFieldAttribute::parse_all(input.iter()).is_err());
     }
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn parse_missing_repr() {
         let input: Vec<Attribute> = parse_quote! {
-            #[sorbit::bit_field(A, offset=3)]
+            #[sorbit_bit_field(A, offset=3)]
         };
         assert!(BitFieldAttribute::parse_all(input.iter()).is_err());
     }

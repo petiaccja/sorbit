@@ -9,11 +9,11 @@ use syn::token::Comma;
 use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, parse_quote};
 
 pub fn sorbit_layout_path() -> Path {
-    parse_quote! {sorbit::layout}
+    parse_quote! {sorbit_layout}
 }
 
 pub fn sorbit_bit_field_path() -> Path {
-    parse_quote! {sorbit::bit_field}
+    parse_quote! {sorbit_bit_field}
 }
 
 pub fn placeholder_type() -> Type {

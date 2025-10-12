@@ -71,7 +71,7 @@ mod tests {
     fn parse_ignore_foreign() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
             #[derive(Clone)]
-            #[sorbit::bit_field(A, bits(0..1))]
+            #[sorbit_bit_field(A, bits(0..1))]
         );
         let result = PackedFieldAttribute::parse(input.iter())?;
         let expected = PackedFieldAttribute { storage: parse_quote!(A), bits: 0..1 };
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn parse_empty() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field()]
+            #[sorbit_bit_field()]
         );
         assert!(PackedFieldAttribute::parse(input.iter()).is_err());
     }
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn parse_layout() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::layout()]
+            #[sorbit_layout()]
         );
         assert!(PackedFieldAttribute::parse(input.iter()).is_err());
     }
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn parse_ignore_storage() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(0..1), repr(u8), offset=3, align=4, round=5)]
+            #[sorbit_bit_field(A, bits(0..1), repr(u8), offset=3, align=4, round=5)]
         );
         let result = PackedFieldAttribute::parse(input.iter())?;
         let expected = PackedFieldAttribute { storage: parse_quote!(A), bits: 0..1 };
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn parse_half_open_range() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(0..3))]
+            #[sorbit_bit_field(A, bits(0..3))]
         );
         let result = PackedFieldAttribute::parse(input.iter())?;
         let expected = PackedFieldAttribute { storage: parse_quote!(A), bits: 0..3 };
@@ -120,7 +120,7 @@ mod tests {
     #[test]
     fn parse_closed_range() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(0..=2))]
+            #[sorbit_bit_field(A, bits(0..=2))]
         );
         let result = PackedFieldAttribute::parse(input.iter())?;
         let expected = PackedFieldAttribute { storage: parse_quote!(A), bits: 0..3 };
@@ -131,7 +131,7 @@ mod tests {
     #[test]
     fn parse_single_bit() -> Result<(), syn::Error> {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(1))]
+            #[sorbit_bit_field(A, bits(1))]
         );
         let result = PackedFieldAttribute::parse(input.iter())?;
         let expected = PackedFieldAttribute { storage: parse_quote!(A), bits: 1..2 };
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn parse_unbounded_left() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(0..))]
+            #[sorbit_bit_field(A, bits(0..))]
         );
         assert!(PackedFieldAttribute::parse(input.iter()).is_err());
     }
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn parse_unbounded_right() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(..2))]
+            #[sorbit_bit_field(A, bits(..2))]
         );
         assert!(PackedFieldAttribute::parse(input.iter()).is_err());
     }
@@ -158,7 +158,7 @@ mod tests {
     #[test]
     fn parse_unbounded_both() {
         let input: Vec<Attribute> = parse_quote!(
-            #[sorbit::bit_field(A, bits(..))]
+            #[sorbit_bit_field(A, bits(..))]
         );
         assert!(PackedFieldAttribute::parse(input.iter()).is_err());
     }

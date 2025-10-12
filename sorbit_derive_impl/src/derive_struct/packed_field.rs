@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn parse_storage_only() {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A)]
+            #[sorbit_bit_field(A)]
             foo: u8
         };
         assert!(PackedField::parse(&input, 0).is_err());
@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn parse_bits_only() {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(bits(3..4))]
+            #[sorbit_bit_field(bits(3..4))]
             foo: u8
         };
         assert!(PackedField::parse(&input, 0).is_err());
@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn parse_storage_and_bits() -> Result<(), syn::Error> {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A, bits(3..4))]
+            #[sorbit_bit_field(A, bits(3..4))]
             foo: u8
         };
         let field = PackedField::parse(&input, 0)?;
@@ -74,8 +74,8 @@ mod tests {
     #[test]
     fn parse_storage_and_bits_separate() -> Result<(), syn::Error> {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A, offset=4)]
-            #[sorbit::bit_field(A, bits(3..4))]
+            #[sorbit_bit_field(A, offset=4)]
+            #[sorbit_bit_field(A, bits(3..4))]
             foo: u8
         };
         let field = PackedField::parse(&input, 0)?;

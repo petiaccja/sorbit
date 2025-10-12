@@ -45,7 +45,7 @@ mod tests {
     #[test]
     fn parse_declared_field_direct_field_with_params() -> Result<(), syn::Error> {
         let input: syn::Field = parse_quote! {
-            #[sorbit::layout(offset=10)]
+            #[sorbit_layout(offset=10)]
             foo: u8
         };
         let field = SourceField::parse(&input, 0)?;
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn parse_declared_field_bit_field() -> Result<(), syn::Error> {
         let input: syn::Field = parse_quote! {
-            #[sorbit::bit_field(A, bits(3..4))]
+            #[sorbit_bit_field(A, bits(3..4))]
             foo: u8
         };
         let field = SourceField::parse(&input, 0)?;
@@ -77,8 +77,8 @@ mod tests {
     #[test]
     fn parse_declared_field_ambiguous() {
         let input: syn::Field = parse_quote! {
-            #[sorbit::layout(offset=0)]
-            #[sorbit::bit_field(A, bits(3..4))]
+            #[sorbit_layout(offset=0)]
+            #[sorbit_bit_field(A, bits(3..4))]
             foo: u8
         };
         assert!(SourceField::parse(&input, 0).is_err());
