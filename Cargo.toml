@@ -2,8 +2,10 @@
 resolver = "2"
 members = ["sorbit", "sorbit_derive", "sorbit_derive_impl"]
 
-# [patch.crates-io]
-# serde_binfmt = { path = "serde_binfmt" }
+[patch.crates-io]
+sorbit = { path = "sorbit" }
+sorbit_derive = { path = "sorbit_derive" }
+sorbit_derive_impl = { path = "sorbit_derive_impl" }
 
 [workspace.dependencies]
 proc-macro2 = { version = "1.0.101", default-features = false }

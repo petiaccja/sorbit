@@ -11,9 +11,9 @@ pub enum DeriveObject {
 }
 
 impl DeriveObject {
-    pub fn parse(input: DeriveInput) -> Result<Self, syn::Error> {
+    pub fn parse(input: &DeriveInput) -> Result<Self, syn::Error> {
         match &input.data {
-            syn::Data::Struct(_) => Ok(Self::Struct(Struct::parse(&input)?)),
+            syn::Data::Struct(_) => Ok(Self::Struct(Struct::parse(input)?)),
             syn::Data::Enum(_) => todo!(),
             syn::Data::Union(_) => Err(syn::Error::new(input.span(), "unions are not supported")),
         }

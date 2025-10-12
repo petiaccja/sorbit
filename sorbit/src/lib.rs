@@ -11,6 +11,7 @@ pub mod deserialize;
 pub mod error;
 pub mod io;
 pub mod serialize;
+pub use sorbit_derive::{Deserialize, Serialize};
 
 mod types;
 
