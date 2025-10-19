@@ -1,4 +1,6 @@
-use syn::{Index, Member, Type};
+use proc_macro2::TokenStream;
+use quote::quote;
+use syn::{Expr, Index, Member, Type};
 
 use crate::derive_struct::direct_field_attribute::DirectFieldAttribute;
 
@@ -18,6 +20,43 @@ impl DirectField {
         };
         let ty = field.ty.clone();
         Ok(Self { name, ty, attribute })
+    }
+
+    pub fn derive_serialize(&self, parent: &Expr, serializer: &Expr) -> TokenStream {
+        let member = &self.name;
+        let serialize_trait = quote! { ::sorbit::serialize::Serialize };
+        let serializer_trait = quote! { ::sorbit::serialize::Serializer };
+
+        // The basic expression to serialize the field without any parameters.
+        let expr = quote! { #serialize_trait::serialize(&#parent.#member, #serializer) };
+
+        // If the field needs to be rounded, wrap the serialization in a composite and align it.
+        let expr = match self.attribute.round {
+            Some(round) => quote! {
+                #serializer_trait::serialize_composite(serializer, |#serializer| {
+                    #expr.and(#serializer_trait::align(#serializer, #round))
+                })
+            },
+            None => expr,
+        };
+
+        // If the field needs alignment, align the stream before serializing the
+        // field. The alignment is deliberately applied AFTER the offset,
+        // because the offset may not be aligned. (Don't get confused, the
+        // alignment expression is built BEFORE the offset expression, the
+        // order is reversed.)
+        let expr = match self.attribute.align {
+            Some(align) => quote! { #serializer_trait::align(#serializer, #align).and(#expr) },
+            None => expr,
+        };
+
+        // If the field is at an absolute offset, pad the stream before serializing the field.
+        let expr = match self.attribute.offset {
+            Some(offset) => quote! { #serializer_trait::pad(#serializer, #offset).and(#expr) },
+            None => expr,
+        };
+
+        expr
     }
 }
 
@@ -71,5 +110,50 @@ mod tests {
             foo: u8
         };
         assert!(DirectField::parse(&input, 0).is_err());
+    }
+
+    #[test]
+    fn derive_serialize_no_parameters() {
+        let input =
+            DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
+        let expected = quote! { ::sorbit::serialize::Serialize::serialize(&self.foo, serializer) };
+        let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
+        assert_eq!(output.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn derive_serialize_offset_and_align() {
+        let input = DirectField {
+            name: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            attribute: DirectFieldAttribute { offset: Some(4), align: Some(6), round: None },
+        };
+        let expected = quote! {
+            ::sorbit::serialize::Serializer::pad(serializer, 4u64).and(
+                ::sorbit::serialize::Serializer::align(serializer, 6u64).and(
+                    ::sorbit::serialize::Serialize::serialize(&self.foo, serializer)
+                )
+            )
+        };
+        let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
+        assert_eq!(output.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn derive_serialize_round() {
+        let input = DirectField {
+            name: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            attribute: DirectFieldAttribute { offset: None, align: None, round: Some(16) },
+        };
+        let expected = quote! {
+            ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
+                ::sorbit::serialize::Serialize::serialize(&self.foo, serializer).and(
+                    ::sorbit::serialize::Serializer::align(serializer, 16u64)
+                )
+            })
+        };
+        let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
+        assert_eq!(output.to_string(), expected.to_string());
     }
 }
