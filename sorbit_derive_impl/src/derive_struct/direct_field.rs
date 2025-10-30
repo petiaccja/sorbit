@@ -56,7 +56,11 @@ impl DirectField {
             None => expr,
         };
 
-        expr
+        let name_str = match &self.name {
+            Member::Named(ident) => ident.to_string(),
+            Member::Unnamed(index) => index.index.to_string(),
+        };
+        quote! { #expr.map_err(|err| ::sorbit::error::SerializeError::enclose(err, #name_str)) }
     }
 }
 
@@ -116,7 +120,10 @@ mod tests {
     fn derive_serialize_no_parameters() {
         let input =
             DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
-        let expected = quote! { ::sorbit::serialize::Serialize::serialize(&self.foo, serializer) };
+        let expected = quote! {
+            ::sorbit::serialize::Serialize::serialize(&self.foo, serializer)
+                .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo"))
+        };
         let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
         assert_eq!(output.to_string(), expected.to_string());
     }
@@ -133,7 +140,7 @@ mod tests {
                 ::sorbit::serialize::Serializer::align(serializer, 6u64).and(
                     ::sorbit::serialize::Serialize::serialize(&self.foo, serializer)
                 )
-            )
+            ).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo"))
         };
         let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
         assert_eq!(output.to_string(), expected.to_string());
@@ -151,7 +158,7 @@ mod tests {
                 ::sorbit::serialize::Serialize::serialize(&self.foo, serializer).and(
                     ::sorbit::serialize::Serializer::align(serializer, 16u64)
                 )
-            })
+            }).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo"))
         };
         let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer));
         assert_eq!(output.to_string(), expected.to_string());

@@ -1,5 +1,5 @@
 use super::basic_stream::{Read, Seek, SeekFrom, Write};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use alloc::vec::Vec;
 
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl Read for GrowingMemoryStream {
             self.stream_pos += bytes.len();
             Ok(())
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -61,7 +61,7 @@ impl Seek for GrowingMemoryStream {
             self.stream_pos = new_stream_pos as usize;
             Ok(self.stream_pos as u64)
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -101,7 +101,7 @@ mod tests {
     fn read_outside_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
         let mut values = [0u8; 8];
-        assert_eq!(stream.read(&mut values), Err(Error::EndOfFile));
+        assert_eq!(stream.read(&mut values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
     }
 
@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn seek_from_current_negative_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
-        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn seek_from_end_negative_out_of_bounds() {
         let mut stream = GrowingMemoryStream::from(vec![1, 2, 3, 4, 5, 6, 7]);
-        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 }

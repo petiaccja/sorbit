@@ -1,5 +1,5 @@
 use super::basic_stream::{Read, Seek, SeekFrom, Write};
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 
 #[derive(Debug)]
 pub struct FixedMemoryStream<Buffer> {
@@ -21,7 +21,7 @@ impl<Buffer: AsRef<[u8]>> Read for FixedMemoryStream<Buffer> {
             self.stream_pos += bytes.len();
             Ok(())
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -34,7 +34,7 @@ impl<Buffer: AsMut<[u8]>> Write for FixedMemoryStream<Buffer> {
             self.stream_pos += bytes.len();
             Ok(())
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -47,7 +47,7 @@ impl<Buffer: AsRef<[u8]>> Seek for FixedMemoryStream<Buffer> {
             self.stream_pos = new_stream_pos as usize;
             Ok(self.stream_pos as u64)
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 
@@ -99,7 +99,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         let mut values = [0u8; 8];
-        assert_eq!(stream.read(&mut values), Err(Error::EndOfFile));
+        assert_eq!(stream.read(&mut values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
     }
 
@@ -130,7 +130,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
         let values = [0u8; 8];
-        assert_eq!(stream.write(&values), Err(Error::EndOfFile));
+        assert_eq!(stream.write(&values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         assert_eq!(buffer, [1, 2, 3, 4, 5, 6, 7]);
     }
@@ -147,7 +147,7 @@ mod tests {
     fn seek_from_start_out_of_bounds() {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
-        assert_eq!(stream.seek(SeekFrom::Start(9)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Start(9)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 
@@ -164,7 +164,7 @@ mod tests {
     fn seek_from_current_out_of_bounds() {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
-        assert_eq!(stream.seek(SeekFrom::Current(9)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Current(9)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 
@@ -172,7 +172,7 @@ mod tests {
     fn seek_from_current_negative_out_of_bounds() {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
-        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 
@@ -188,7 +188,7 @@ mod tests {
     fn seek_from_end_out_of_bounds() {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
-        assert_eq!(stream.seek(SeekFrom::End(2)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::End(2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 
@@ -196,7 +196,7 @@ mod tests {
     fn seek_from_end_negative_out_of_bounds() {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = FixedMemoryStream::new(&mut buffer);
-        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_pos, 0);
     }
 }

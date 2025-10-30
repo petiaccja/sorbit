@@ -297,8 +297,8 @@ mod tests {
                     serializer: &mut S
                 ) -> ::core::result::Result<S::Success, S::Error> {
                     ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
-                        ::sorbit::serialize::Serialize::serialize(&self.foo, serializer)?;
-                        ::sorbit::serialize::Serialize::serialize(&self.bar, serializer)?;
+                        ::sorbit::serialize::Serialize::serialize(&self.foo, serializer).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo"))?;
+                        ::sorbit::serialize::Serialize::serialize(&self.bar, serializer).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "bar"))?;
                         ::sorbit::serialize::Serializer::serialize_nothing(serializer)
                     })
                 }

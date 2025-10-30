@@ -1,4 +1,9 @@
-use crate::{byte_order::ByteOrder, deserialize::Deserializer, error::Error, io::Read};
+use crate::{
+    byte_order::ByteOrder,
+    deserialize::Deserializer,
+    error::{Error, ErrorKind},
+    io::Read,
+};
 
 pub struct StreamDeserializer<Stream: Read> {
     stream: Option<Stream>,
@@ -72,7 +77,7 @@ impl<Stream: Read> StreamDeserializer<Stream> {
             }
             Ok(())
         } else {
-            Err(Error::LengthExceedsPadding)
+            Err(ErrorKind::LengthExceedsPadding.into())
         }
     }
 
@@ -115,7 +120,7 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
         match byte[0] {
             0 => Ok(false),
             1 => Ok(true),
-            _ => Err(Error::InvalidVariant),
+            _ => Err(ErrorKind::InvalidEnumVariant.into()),
         }
     }
 
@@ -191,7 +196,10 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
 mod tests {
     use super::*;
 
-    use crate::io::{FixedMemoryStream, Seek};
+    use crate::{
+        error::ErrorKind,
+        io::{FixedMemoryStream, Seek},
+    };
 
     //--------------------------------------------------------------------------
     // bool
@@ -201,7 +209,7 @@ mod tests {
         let mut s = StreamDeserializer::new(FixedMemoryStream::new([0u8, 1u8, 45u8]));
         assert_eq!(s.deserialize_bool(), Ok(false));
         assert_eq!(s.deserialize_bool(), Ok(true));
-        assert_eq!(s.deserialize_bool(), Err(Error::InvalidVariant));
+        assert_eq!(s.deserialize_bool(), Err(ErrorKind::InvalidEnumVariant.into()));
     }
 
     //--------------------------------------------------------------------------
@@ -370,7 +378,7 @@ mod tests {
     fn pad_length_exceeds_padding() -> Result<(), Error> {
         let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xAA, 0xBB, 0xCC])).big_endian();
         s.deserialize_array::<3>()?;
-        assert_eq!(s.pad(2), Err(Error::LengthExceedsPadding));
+        assert_eq!(s.pad(2), Err(ErrorKind::LengthExceedsPadding.into()));
         Ok(())
     }
 

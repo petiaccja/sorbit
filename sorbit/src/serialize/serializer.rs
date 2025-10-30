@@ -1,4 +1,5 @@
 use crate::byte_order::ByteOrder;
+use crate::error::SerializeError;
 use crate::io::{Read, Seek};
 
 /// The section of the byte stream where a serialized object resized.
@@ -15,7 +16,7 @@ pub trait Section {
 /// and error.
 pub trait SerializerOutput {
     type Success;
-    type Error;
+    type Error: SerializeError;
 }
 
 /// Serializers can transform primitive types into a stream of bytes that can

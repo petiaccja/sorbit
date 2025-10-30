@@ -3,7 +3,7 @@ use crate::serialize::serializer::{Lookback, SerializerOutput};
 
 use super::Serializer;
 use crate::byte_order::ByteOrder;
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 
 pub struct StreamSerializer<Stream: Write> {
     stream: Option<Stream>,
@@ -80,7 +80,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
             }
             Ok(Section(start_pos..self.stream_pos))
         } else {
-            Err(Error::LengthExceedsPadding)
+            Err(ErrorKind::LengthExceedsPadding.into())
         }
     }
 
@@ -215,7 +215,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
             Ok(partial_stream) => partial_stream,
             Err(stream) => {
                 self.stream.replace(stream);
-                return Err(Error::EndOfFile);
+                return Err(ErrorKind::UnexpectedEof.into());
             }
         };
         let mut section_serializer = StreamSerializer::new(partial_stream);
@@ -241,7 +241,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
             Ok(partial_stream) => partial_stream,
             Err(stream) => {
                 self.stream.replace(stream);
-                return Err(Error::EndOfFile);
+                return Err(ErrorKind::UnexpectedEof.into());
             }
         };
         let result = analyze_bytes(&mut partial_stream);
@@ -271,7 +271,7 @@ impl From<Section> for () {
 
 #[cfg(test)]
 mod tests {
-    use crate::io::GrowingMemoryStream;
+    use crate::{error::ErrorKind, io::GrowingMemoryStream};
 
     use super::*;
 
@@ -488,7 +488,7 @@ mod tests {
     fn pad_length_exceeds_padding() -> Result<(), Error> {
         let mut s = StreamSerializer::new(GrowingMemoryStream::new()).big_endian();
         s.serialize_array(&[0xAA, 0xBB, 0xCC])?;
-        assert_eq!(s.pad(2), Err(Error::LengthExceedsPadding));
+        assert_eq!(s.pad(2), Err(ErrorKind::LengthExceedsPadding.into()));
         Ok(())
     }
 

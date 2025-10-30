@@ -1,7 +1,7 @@
-use crate::byte_order::ByteOrder;
+use crate::{byte_order::ByteOrder, error::SerializeError};
 
 pub trait Deserializer: Sized {
-    type Error;
+    type Error: SerializeError;
     type CompositeDeserializer: Deserializer<Error = Self::Error>;
     type ByteOrderDeserializer: Deserializer<Error = Self::Error>;
 

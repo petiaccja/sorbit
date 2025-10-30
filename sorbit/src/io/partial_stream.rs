@@ -1,6 +1,6 @@
 use core::ops::Range;
 
-use crate::error::Error;
+use crate::error::{Error, ErrorKind};
 use crate::io::{Read, Seek, SeekFrom, Write};
 
 #[derive(Debug)]
@@ -31,7 +31,7 @@ impl<Stream: Read + Seek> Read for PartialStream<Stream> {
         if range_contains(&self.range, &read_range) {
             self.stream.read(bytes)
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -43,7 +43,7 @@ impl<Stream: Write + Seek> Write for PartialStream<Stream> {
         if range_contains(&self.range, &write_range) {
             self.stream.write(bytes)
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 }
@@ -57,7 +57,7 @@ impl<Stream: Seek> Seek for PartialStream<Stream> {
             self.stream.seek(SeekFrom::Start(new_underlying_stream_pos))?;
             Ok(new_stream_pos as u64)
         } else {
-            Err(Error::EndOfFile)
+            Err(ErrorKind::UnexpectedEof.into())
         }
     }
 
@@ -121,7 +121,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let mut values = [0u8; 5];
-        assert_eq!(stream.read(&mut values), Err(Error::EndOfFile));
+        assert_eq!(stream.read(&mut values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
@@ -153,7 +153,7 @@ mod tests {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let values = [0u8; 5];
-        assert_eq!(stream.write(&values), Err(Error::EndOfFile));
+        assert_eq!(stream.write(&values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         assert_eq!(buffer, [1, 2, 3, 4, 5, 6, 7]);
         Ok(())
@@ -172,7 +172,7 @@ mod tests {
     fn seek_from_start_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
-        assert_eq!(stream.seek(SeekFrom::Start(5)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Start(5)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
@@ -191,7 +191,7 @@ mod tests {
     fn seek_from_current_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
-        assert_eq!(stream.seek(SeekFrom::Current(5)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Current(5)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
@@ -200,7 +200,7 @@ mod tests {
     fn seek_from_current_negative_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
-        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
@@ -218,7 +218,7 @@ mod tests {
     fn seek_from_end_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
-        assert_eq!(stream.seek(SeekFrom::End(2)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::End(2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
@@ -227,7 +227,7 @@ mod tests {
     fn seek_from_end_negative_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
         let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
-        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(Error::EndOfFile));
+        assert_eq!(stream.seek(SeekFrom::End(-12)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
     }
