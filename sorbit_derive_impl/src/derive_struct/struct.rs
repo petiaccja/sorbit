@@ -86,6 +86,17 @@ impl Struct {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let me = parse_quote!(self);
         let fields = self.fields.iter().map(|field| field.derive_serialize(&me, &serializer_arg, &serializer_ty));
+
+        let len = match self.attributes.len {
+            Some(len) => quote! { #serializer_trait::pad(#serializer_arg, #len)?; },
+            None => quote! {},
+        };
+
+        let round = match self.attributes.round {
+            Some(round) => quote! { #serializer_trait::align(#serializer_arg, #round)?; },
+            None => quote! {},
+        };
+
         quote! {
             impl #impl_generics #serialize_trait for #name #ty_generics #where_clause{
                 fn serialize<#serializer_ty: #serializer_trait>(
@@ -94,6 +105,8 @@ impl Struct {
                 ) -> ::core::result::Result<#serializer_ty::Success, #serializer_ty::Error> {
                     #serializer_trait::serialize_composite(#serializer_arg, |#serializer_arg| {
                         #(#fields?;)*
+                        #len
+                        #round
                         #serializer_trait::serialize_nothing(#serializer_arg)
                     })
                 }
@@ -262,6 +275,34 @@ mod tests {
                     serializer: &mut S
                 ) -> ::core::result::Result<S::Success, S::Error> {
                     ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
+                        ::sorbit::serialize::Serializer::serialize_nothing(serializer)
+                    })
+                }
+            }
+        };
+        assert_eq!(output.to_string(), expected.to_string());
+    }
+
+    #[test]
+    fn derive_serialize_len_and_round() {
+        let input = Struct {
+            name: parse_quote!(Test),
+            generics: Generics::default(),
+            attributes: StructAttribute { len: Some(12), round: Some(8) },
+            fields: vec![],
+        };
+
+        let output = input.derive_serialize();
+        let expected = quote! {
+            impl ::sorbit::serialize::Serialize for Test
+            {
+                fn serialize<S: ::sorbit::serialize::Serializer>(
+                    &self,
+                    serializer: &mut S
+                ) -> ::core::result::Result<S::Success, S::Error> {
+                    ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
+                        ::sorbit::serialize::Serializer::pad(serializer, 12u64)?;
+                        ::sorbit::serialize::Serializer::align(serializer, 8u64)?;
                         ::sorbit::serialize::Serializer::serialize_nothing(serializer)
                     })
                 }
