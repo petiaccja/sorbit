@@ -3,6 +3,7 @@ pub enum ErrorKind {
     LengthExceedsPadding,
     UnexpectedEof,
     InvalidEnumVariant,
+    InvalidBitField,
     #[cfg(feature = "std")]
     IO(std::io::ErrorKind),
 }
@@ -27,6 +28,8 @@ pub trait SerializeError: Sized {
 
     #[cfg(feature = "alloc")]
     fn enclose(self, ident: &str) -> Self;
+
+    fn invalid_bit_field() -> Self;
 }
 
 //------------------------------------------------------------------------------
@@ -42,6 +45,10 @@ impl SerializeError for Error {
     #[cfg(feature = "alloc")]
     fn enclose(self, ident: &str) -> Self {
         Self { kind: self.kind, item: self.item.enclose(ident) }
+    }
+
+    fn invalid_bit_field() -> Self {
+        ErrorKind::InvalidBitField.into()
     }
 }
 
@@ -74,6 +81,7 @@ impl core::fmt::Display for ErrorKind {
             LengthExceedsPadding => write!(f, "The current length of the buffer already exceeds the requested padding"),
             UnexpectedEof => write!(f, "End of file reached, cannot read/write more data"),
             InvalidEnumVariant => write!(f, "The numeric value does not correspond to an enum or bool variant"),
+            InvalidBitField => write!(f, "The bit field cannot be serialized due to overlap, underflow, or overflow"),
             #[cfg(feature = "std")]
             IO(kind) => write!(f, "{kind}"),
         }

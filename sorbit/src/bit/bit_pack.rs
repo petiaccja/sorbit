@@ -192,6 +192,12 @@ impl_bit_pack_bool!(u16);
 impl_bit_pack_bool!(u32);
 impl_bit_pack_bool!(u64);
 
+impl<T: BitPack<Packed>, Packed> BitPack<Packed> for &T {
+    fn pack(&self, num_bits: usize) -> Option<Packed> {
+        (*self).pack(num_bits)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

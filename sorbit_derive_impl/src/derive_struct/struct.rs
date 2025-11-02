@@ -82,15 +82,16 @@ impl Struct {
         let serialize_trait = quote! { ::sorbit::serialize::Serialize };
         let serializer_trait = quote! { ::sorbit::serialize::Serializer };
         let serializer_arg = parse_quote! { serializer };
+        let serializer_ty = parse_quote! { S };
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let me = parse_quote!(self);
-        let fields = self.fields.iter().map(|field| field.derive_serialize(&me, &serializer_arg));
+        let fields = self.fields.iter().map(|field| field.derive_serialize(&me, &serializer_arg, &serializer_ty));
         quote! {
             impl #impl_generics #serialize_trait for #name #ty_generics #where_clause{
-                fn serialize<S: #serializer_trait>(
+                fn serialize<#serializer_ty: #serializer_trait>(
                     &self,
-                    #serializer_arg: &mut S
-                ) -> ::core::result::Result<S::Success, S::Error> {
+                    #serializer_arg: &mut #serializer_ty
+                ) -> ::core::result::Result<#serializer_ty::Success, #serializer_ty::Error> {
                     #serializer_trait::serialize_composite(#serializer_arg, |#serializer_arg| {
                         #(#fields?;)*
                         #serializer_trait::serialize_nothing(#serializer_arg)
