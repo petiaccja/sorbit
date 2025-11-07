@@ -1,6 +1,8 @@
 use core::ops::{Add, BitOrAssign, Bound::*, Range, RangeBounds};
 use num::PrimInt;
 
+use crate::bit::Error;
+
 use super::bit_pack::{PackInto, UnpackFrom};
 use super::bit_util::{bit_size_of, keep_lowest_n_bits};
 
@@ -53,26 +55,23 @@ where
         Self { bits, mask: Packed::zero() }
     }
 
-    pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, to_bits: BitRange) -> Result<(), Value>
+    pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, to_bits: BitRange) -> Result<(), Error>
     where
         Value: PackInto<Packed>,
         BitRange: RangeBounds<BitScalar>,
         BitScalar: Add + Into<i64> + Clone,
     {
         let to_bits = reduce_range(&to_bits, &Self::space());
-        if !Self::is_range_valid(&to_bits) {
-            return Err(value);
-        }
+        Self::validate_range(&to_bits)?;
         let num_bits = (to_bits.end - to_bits.start) as usize;
         let mask_bits: Packed =
             keep_lowest_n_bits!(!0u64, num_bits).pack_into(num_bits).expect("high bits not cut properly");
         let mask_placed = mask_bits << (to_bits.start as usize);
         if (self.mask | mask_placed).count_ones() != self.mask.count_ones() + num_bits as u32 {
-            // Error: we are overwriting another packed object in the bit field.
-            return Err(value);
+            return Err(Error::Overlap);
         }
 
-        let packed_bits: Packed = value.pack_into(num_bits).ok_or(value)?;
+        let packed_bits: Packed = value.pack_into(num_bits).ok_or(Error::TooManyBits)?;
         let packed_placed = packed_bits << to_bits.start as usize;
 
         self.mask |= mask_placed;
@@ -80,19 +79,16 @@ where
         Ok(())
     }
 
-    pub fn unpack<Value, BitRange, BitScalar>(&self, from_bits: BitRange) -> Result<Value, ()>
+    pub fn unpack<Value, BitRange, BitScalar>(&self, from_bits: BitRange) -> Result<Value, Error>
     where
         Value: UnpackFrom<Packed>,
         BitRange: RangeBounds<BitScalar>,
         BitScalar: Add + Into<i64> + Clone,
     {
         let from_bits = reduce_range(&from_bits, &Self::space());
-        if !Self::is_range_valid(&from_bits) {
-            // Error: the target bits must be in non-reversed order.
-            return Err(());
-        }
+        Self::validate_range(&from_bits)?;
         let num_bits = (from_bits.end - from_bits.start) as usize;
-        Value::unpack_from(self.bits >> from_bits.start as usize, num_bits).map_err(|_| ())
+        Value::unpack_from(self.bits >> from_bits.start as usize, num_bits).map_err(|_| Error::TooManyBits)
     }
 
     pub fn into_bits(self) -> Packed {
@@ -103,12 +99,17 @@ where
         0..(bit_size_of::<Packed>() as i64)
     }
 
-    fn is_range_valid(range: &Range<i64>) -> bool {
+    fn validate_range(range: &Range<i64>) -> Result<(), Error> {
         let space = Self::space();
         let is_start_within_space = space.contains(&range.start);
         let is_end_within_space = space.contains(&(range.end - 1));
         let is_not_reversed = range.start <= range.end;
-        is_start_within_space && is_end_within_space && is_not_reversed
+
+        let is_start_within_space_err = is_start_within_space.then_some(()).ok_or(Error::OutOfRange);
+        let is_end_within_space_err = is_end_within_space.then_some(()).ok_or(Error::OutOfRange);
+        let is_not_reversed_err = is_not_reversed.then_some(()).ok_or(Error::ReversedRange);
+
+        is_start_within_space_err.and(is_end_within_space_err).and(is_not_reversed_err)
     }
 }
 
