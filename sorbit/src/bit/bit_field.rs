@@ -1,16 +1,16 @@
 use core::ops::{Add, BitOrAssign, Bound::*, Range, RangeBounds};
 use num::PrimInt;
 
-use super::bit_pack::{BitPack, BitUnpack};
+use super::bit_pack::{PackInto, UnpackFrom};
 use super::bit_util::{bit_size_of, keep_lowest_n_bits};
 
-pub struct BitField<T: PrimInt>
+pub struct BitField<Packed: PrimInt>
 where
-    T: PrimInt + BitOrAssign,
-    u64: BitPack<T>,
+    Packed: PrimInt + BitOrAssign,
+    u64: PackInto<Packed>,
 {
-    bits: T,
-    mask: T,
+    bits: Packed,
+    mask: Packed,
 }
 
 #[macro_export]
@@ -40,38 +40,39 @@ macro_rules! unpack_bit_field {
     };
 }
 
-impl<T> BitField<T>
+impl<Packed> BitField<Packed>
 where
-    T: PrimInt + BitOrAssign,
-    u64: BitPack<T>,
+    Packed: PrimInt + BitOrAssign,
+    u64: PackInto<Packed>,
 {
     pub fn new() -> Self {
-        Self { bits: T::zero(), mask: T::zero() }
+        Self { bits: Packed::zero(), mask: Packed::zero() }
     }
 
-    pub fn from_bits(bits: T) -> Self {
-        Self { bits, mask: T::zero() }
+    pub fn from_bits(bits: Packed) -> Self {
+        Self { bits, mask: Packed::zero() }
     }
 
-    pub fn pack<P, R, RV>(&mut self, value: P, to_bits: R) -> Result<(), P>
+    pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, to_bits: BitRange) -> Result<(), Value>
     where
-        P: BitPack<T>,
-        R: RangeBounds<RV>,
-        RV: Add + Into<i64> + Clone,
+        Value: PackInto<Packed>,
+        BitRange: RangeBounds<BitScalar>,
+        BitScalar: Add + Into<i64> + Clone,
     {
         let to_bits = reduce_range(&to_bits, &Self::space());
         if !Self::is_range_valid(&to_bits) {
             return Err(value);
         }
         let num_bits = (to_bits.end - to_bits.start) as usize;
-        let mask_bits: T = keep_lowest_n_bits!(!0u64, num_bits).pack(num_bits).expect("high bits not cut properly");
+        let mask_bits: Packed =
+            keep_lowest_n_bits!(!0u64, num_bits).pack_into(num_bits).expect("high bits not cut properly");
         let mask_placed = mask_bits << (to_bits.start as usize);
         if (self.mask | mask_placed).count_ones() != self.mask.count_ones() + num_bits as u32 {
             // Error: we are overwriting another packed object in the bit field.
             return Err(value);
         }
 
-        let packed_bits: T = value.pack(num_bits).ok_or(value)?;
+        let packed_bits: Packed = value.pack_into(num_bits).ok_or(value)?;
         let packed_placed = packed_bits << to_bits.start as usize;
 
         self.mask |= mask_placed;
@@ -79,11 +80,11 @@ where
         Ok(())
     }
 
-    pub fn unpack<P, R, RV>(&self, from_bits: R) -> Result<P, ()>
+    pub fn unpack<Value, BitRange, BitScalar>(&self, from_bits: BitRange) -> Result<Value, ()>
     where
-        P: BitUnpack<T>,
-        R: RangeBounds<RV>,
-        RV: Add + Into<i64> + Clone,
+        Value: UnpackFrom<Packed>,
+        BitRange: RangeBounds<BitScalar>,
+        BitScalar: Add + Into<i64> + Clone,
     {
         let from_bits = reduce_range(&from_bits, &Self::space());
         if !Self::is_range_valid(&from_bits) {
@@ -91,15 +92,15 @@ where
             return Err(());
         }
         let num_bits = (from_bits.end - from_bits.start) as usize;
-        P::unpack(self.bits >> from_bits.start as usize, num_bits).map_err(|_| ())
+        Value::unpack_from(self.bits >> from_bits.start as usize, num_bits).map_err(|_| ())
     }
 
-    pub fn into_bits(self) -> T {
+    pub fn into_bits(self) -> Packed {
         self.bits
     }
 
     const fn space() -> Range<i64> {
-        0..(bit_size_of::<T>() as i64)
+        0..(bit_size_of::<Packed>() as i64)
     }
 
     fn is_range_valid(range: &Range<i64>) -> bool {
@@ -111,10 +112,10 @@ where
     }
 }
 
-fn reduce_range<RV, R>(range: &R, space: &Range<i64>) -> Range<i64>
+fn reduce_range<BitScalar, BitRange>(range: &BitRange, space: &Range<i64>) -> Range<i64>
 where
-    RV: Add + Into<i64> + Clone,
-    R: RangeBounds<RV>,
+    BitScalar: Add + Into<i64> + Clone,
+    BitRange: RangeBounds<BitScalar>,
 {
     match (range.start_bound(), range.end_bound()) {
         (Included(start), Included(end)) => (start.clone().into())..(end.clone().into() + 1),
