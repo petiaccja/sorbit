@@ -52,7 +52,7 @@ fn derive_serialize_bit_field(
         let end = member.attribute.bits.end;
         quote! {
             bit_field.pack(&#parent.#name, #start..#end)
-                        .map_err(|_| <<#serializer_ty as ::sorbit::serialize::SerializerOutput>::Error as ::sorbit::error::SerializeError>::invalid_bit_field())
+                        .map_err(|err| <<#serializer_ty as ::sorbit::serialize::SerializerOutput>::Error::from(err))
                         .map_err(|err| ::sorbit::error::SerializeError::enclose(err, #name_str))
         }
     });
@@ -100,10 +100,10 @@ mod tests {
                 let mut bit_field = ::sorbit::bit::BitField::<u16>::new();
                 let results = [
                     bit_field.pack(&self.foo, 4u8..7u8)
-                            .map_err(|_| <<S as ::sorbit::serialize::SerializerOutput>::Error as ::sorbit::error::SerializeError>::invalid_bit_field())
+                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
                             .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo")),
                     bit_field.pack(&self.bar, 9u8..10u8)
-                            .map_err(|_| <<S as ::sorbit::serialize::SerializerOutput>::Error as ::sorbit::error::SerializeError>::invalid_bit_field())
+                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
                             .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "bar")),
                 ];
                 results.into_iter().fold(Ok(()), |acc, result| acc.and(result)).map(|_| bit_field)
@@ -137,7 +137,7 @@ mod tests {
                 let mut bit_field = ::sorbit::bit::BitField::<u16>::new();
                 let results = [
                     bit_field.pack(&self.foo, 4u8..7u8)
-                            .map_err(|_| <<S as ::sorbit::serialize::SerializerOutput>::Error as ::sorbit::error::SerializeError>::invalid_bit_field())
+                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
                             .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo")),
                 ];
                 results.into_iter().fold(Ok(()), |acc, result| acc.and(result)).map(|_| bit_field)

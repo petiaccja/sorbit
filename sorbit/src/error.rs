@@ -1,9 +1,11 @@
+use crate::bit::Error as BitError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
     LengthExceedsPadding,
     UnexpectedEof,
     InvalidEnumVariant,
-    InvalidBitField,
+    Bit(BitError),
     #[cfg(feature = "std")]
     IO(std::io::ErrorKind),
 }
@@ -22,19 +24,23 @@ pub struct Item {
     path: Vec<String>,
 }
 
-pub trait SerializeError: Sized {
+pub trait SerializeError: Sized + From<BitError> {
     #[cfg(not(feature = "alloc"))]
     fn enclose(self, ident: &'static str) -> Self;
 
     #[cfg(feature = "alloc")]
     fn enclose(self, ident: &str) -> Self;
-
-    fn invalid_bit_field() -> Self;
 }
 
 //------------------------------------------------------------------------------
 // Error implementations
 //------------------------------------------------------------------------------
+
+impl From<BitError> for Error {
+    fn from(value: BitError) -> Self {
+        Self { kind: ErrorKind::Bit(value), item: Item::default() }
+    }
+}
 
 impl SerializeError for Error {
     #[cfg(not(feature = "alloc"))]
@@ -45,10 +51,6 @@ impl SerializeError for Error {
     #[cfg(feature = "alloc")]
     fn enclose(self, ident: &str) -> Self {
         Self { kind: self.kind, item: self.item.enclose(ident) }
-    }
-
-    fn invalid_bit_field() -> Self {
-        ErrorKind::InvalidBitField.into()
     }
 }
 
@@ -78,10 +80,10 @@ impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use ErrorKind::*;
         match self {
-            LengthExceedsPadding => write!(f, "The current length of the buffer already exceeds the requested padding"),
-            UnexpectedEof => write!(f, "End of file reached, cannot read/write more data"),
-            InvalidEnumVariant => write!(f, "The numeric value does not correspond to an enum or bool variant"),
-            InvalidBitField => write!(f, "The bit field cannot be serialized due to overlap, underflow, or overflow"),
+            LengthExceedsPadding => write!(f, "the current length of the buffer already exceeds the requested padding"),
+            UnexpectedEof => write!(f, "end of file reached, cannot read/write more data"),
+            InvalidEnumVariant => write!(f, "the numeric value does not correspond to an enum or bool variant"),
+            Bit(err) => write!(f, "the bit field cannot be packed: {err}"),
             #[cfg(feature = "std")]
             IO(kind) => write!(f, "{kind}"),
         }
