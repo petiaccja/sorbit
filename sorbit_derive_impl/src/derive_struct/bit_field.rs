@@ -1,9 +1,12 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::ToTokens;
 use syn::{Expr, Ident, Type, parse_quote};
 
-use crate::derive_struct::{
-    bit_field_attribute::BitFieldAttribute, direct_field::derive_serialize_with_layout, packed_field::PackedField,
+use crate::{
+    derive_struct::{
+        bit_field_attribute::BitFieldAttribute, direct_field::derive_serialize_with_layout, packed_field::PackedField,
+    },
+    hir,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,65 +17,47 @@ pub struct BitField {
 }
 
 impl BitField {
-    pub fn derive_serialize(&self, parent: &Expr, serializer: &Expr, serializer_ty: &Type) -> TokenStream {
-        if self.members.is_empty() {
-            quote! {}
-        } else {
-            let display_name = self.name.to_string();
-            let bit_field = derive_serialize_bit_field(&self.attribute.repr, serializer_ty, parent, &self.members);
-            let serialization = derive_serialize_with_layout(
-                &parse_quote!(bit_field.into_bits()),
-                serializer,
-                Some(&display_name),
-                self.attribute.offset,
-                self.attribute.align,
-                self.attribute.round,
-            );
+    pub fn to_hir(&self) -> hir::ast::Expr {
+        hir::chain_with_vars(
+            vec![
+                derive_serialize_bit_field(&self.attribute.repr, &parse_quote!(self), &self.members),
+                derive_serialize_with_layout(
+                    &parse_quote!(&bit_field.into_bits()),
+                    Some(&self.name.to_string()),
+                    self.attribute.offset,
+                    self.attribute.align,
+                    self.attribute.round,
+                ),
+            ],
+            vec![Some(parse_quote!(bit_field))],
+        )
+    }
 
-            quote! {
-                #bit_field.and_then(|bit_field| #serialization)
-            }
-        }
+    pub fn derive_serialize(&self) -> TokenStream {
+        self.to_hir().to_token_stream()
     }
 }
 
-fn derive_serialize_bit_field(
-    repr: &Type,
-    serializer_ty: &Type,
-    parent: &Expr,
-    members: &[PackedField],
-) -> TokenStream {
+fn derive_serialize_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> hir::ast::Expr {
     let members = members.iter().map(|member| {
         let name = &member.name;
         let name_str = match &member.name {
             syn::Member::Named(ident) => ident.to_string(),
             syn::Member::Unnamed(index) => index.index.to_string(),
         };
-        let start = member.attribute.bits.start;
-        let end = member.attribute.bits.end;
-        quote! {
-            bit_field.pack(&#parent.#name, #start..#end)
-                        .map_err(|err| <<#serializer_ty as ::sorbit::serialize::SerializerOutput>::Error::from(err))
-                        .map_err(|err| ::sorbit::error::SerializeError::enclose(err, #name_str))
-        }
+        hir::enclose(
+            hir::pack_object(parse_quote!(bit_field), parse_quote!(&#parent.#name), member.attribute.bits.clone()),
+            name_str,
+        )
     });
 
-    quote! {
-        {
-            let mut bit_field = ::sorbit::bit::BitField::<#repr>::new();
-            let results = [
-                #(#members,)*
-            ];
-            results.into_iter().fold(Ok(()), |acc, result| acc.and(result)).map(|_| bit_field)
-        }
-    }
+    hir::pack_bit_field(parse_quote!(bit_field), repr.clone(), members.collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use quote::quote;
     use syn::parse_quote;
 
     use crate::derive_struct::{
@@ -94,59 +79,33 @@ mod tests {
                 attribute: PackedFieldAttribute { storage: parse_quote!(_bf), bits: 9..10 },
             },
         ];
-        let output = derive_serialize_bit_field(&parse_quote!(u16), &parse_quote!(S), &parse_quote!(self), &members);
-        let expected = quote! {
-            {
-                let mut bit_field = ::sorbit::bit::BitField::<u16>::new();
-                let results = [
-                    bit_field.pack(&self.foo, 4u8..7u8)
-                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
-                            .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo")),
-                    bit_field.pack(&self.bar, 9u8..10u8)
-                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
-                            .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "bar")),
-                ];
-                results.into_iter().fold(Ok(()), |acc, result| acc.and(result)).map(|_| bit_field)
-            }
-        };
-        assert_eq!(expected.to_string(), output.to_string());
+        let actual = derive_serialize_bit_field(&parse_quote!(u16), &parse_quote!(self), &members);
+        let expected = hir::pack_bit_field(
+            parse_quote!(bit_field),
+            parse_quote!(u16),
+            vec![
+                hir::enclose(hir::pack_object(parse_quote!(bit_field), parse_quote!(&self.foo), 4..7), "foo".into()),
+                hir::enclose(hir::pack_object(parse_quote!(bit_field), parse_quote!(&self.bar), 9..10), "bar".into()),
+            ],
+        );
+        assert_eq!(actual, expected);
     }
 
     #[test]
-    fn derive_serialize_empty() {
-        let input = BitField { name: parse_quote!(bf), attribute: BitFieldAttribute::default(), members: vec![] };
-        let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer), &parse_quote!(S));
-        let expected = quote! {};
-        assert_eq!(output.to_string(), expected.to_string());
-    }
-
-    #[test]
-    fn derive_serialize_no_parameters() {
+    fn to_hir_empty() {
         let input = BitField {
-            name: parse_quote!(_bf),
-            attribute: BitFieldAttribute { repr: parse_quote!(u16), offset: None, align: None, round: None },
-            members: vec![PackedField {
-                name: parse_quote!(foo),
-                ty: parse_quote!(i8),
-                attribute: PackedFieldAttribute { storage: parse_quote!(_bf), bits: 4..7 },
-            }],
+            name: parse_quote!(bf),
+            attribute: BitFieldAttribute { repr: parse_quote!(u16), ..Default::default() },
+            members: vec![],
         };
-        let output = input.derive_serialize(&parse_quote!(self), &parse_quote!(serializer), &parse_quote!(S));
-        let expected = quote! {
-            {
-                let mut bit_field = ::sorbit::bit::BitField::<u16>::new();
-                let results = [
-                    bit_field.pack(&self.foo, 4u8..7u8)
-                            .map_err(|err| <<S as ::sorbit::serialize::SerializerOutput>::Error>::from(err))
-                            .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo")),
-                ];
-                results.into_iter().fold(Ok(()), |acc, result| acc.and(result)).map(|_| bit_field)
-            }
-            .and_then(|bit_field|
-                ::sorbit::serialize::Serialize::serialize(&bit_field.into_bits(), serializer)
-                    .map_err(|err| ::sorbit::error::SerializeError::enclose(err, "_bf"))
-            )
-        };
-        assert_eq!(output.to_string(), expected.to_string());
+        let actual = input.to_hir();
+        let expected = hir::chain_with_vars(
+            vec![
+                hir::pack_bit_field(parse_quote!(bit_field), parse_quote!(u16), vec![]),
+                hir::enclose(hir::serialize_object(parse_quote!(&bit_field.into_bits())), "bf".into()),
+            ],
+            vec![Some(parse_quote!(bit_field))],
+        );
+        assert_eq!(actual, expected);
     }
 }

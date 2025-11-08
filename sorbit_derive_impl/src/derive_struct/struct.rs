@@ -81,11 +81,10 @@ impl Struct {
         let name = &self.name;
         let serialize_trait = quote! { ::sorbit::serialize::Serialize };
         let serializer_trait = quote! { ::sorbit::serialize::Serializer };
-        let serializer_arg = parse_quote! { serializer };
-        let serializer_ty = parse_quote! { S };
+        let serializer_arg: syn::Expr = parse_quote! { serializer };
+        let serializer_ty: syn::Type = parse_quote! { S };
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        let me = parse_quote!(self);
-        let fields = self.fields.iter().map(|field| field.derive_serialize(&me, &serializer_arg, &serializer_ty));
+        let fields = self.fields.iter().map(|field| field.derive_serialize());
 
         let len = match self.attributes.len {
             Some(len) => quote! { #serializer_trait::pad(#serializer_arg, #len)?; },

@@ -7,6 +7,7 @@ extern crate alloc;
 
 pub mod bit;
 pub mod byte_order;
+pub mod codegen;
 pub mod deserialize;
 pub mod error;
 pub mod io;
