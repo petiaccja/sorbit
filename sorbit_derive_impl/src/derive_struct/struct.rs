@@ -10,7 +10,7 @@ use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
 use crate::derive_struct::source_field::SourceField;
 use crate::derive_struct::struct_attribute::StructAttribute;
-use crate::{hir, ir_de};
+use crate::{ir_de, ir_se};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -77,13 +77,13 @@ impl Struct {
         Ok(Self { name, generics, attributes, fields })
     }
 
-    pub fn to_hir(&self) -> hir::SerializeImpl {
-        let fields = self.fields.iter().map(|field| field.to_hir());
-        let pad_after = self.attributes.len.map(|len| hir::pad(len)).into_iter();
-        let align_after = self.attributes.round.map(|round| hir::align(round)).into_iter();
+    pub fn lower_se(&self) -> ir_se::SerializeImpl {
+        let fields = self.fields.iter().map(|field| field.lower_se());
+        let pad_after = self.attributes.len.map(|len| ir_se::pad(len)).into_iter();
+        let align_after = self.attributes.round.map(|round| ir_se::align(round)).into_iter();
 
-        let body = hir::serialize_composite(fields.chain(pad_after).chain(align_after).collect());
-        hir::serialize_impl(self.name.clone(), self.generics.clone(), body)
+        let body = ir_se::serialize_composite(fields.chain(pad_after).chain(align_after).collect());
+        ir_se::serialize_impl(self.name.clone(), self.generics.clone(), body)
     }
 
     pub fn lower_de(&self) -> ir_de::DeserializeImpl {
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn derive_serialize_generic() {
+    fn lower_se_generic() {
         #[rustfmt::skip]
         let input: DeriveInput = parse_quote!(
             struct Ignore<'x, T: Clone>
@@ -224,13 +224,13 @@ mod tests {
             fields: vec![],
         };
 
-        let actual = input.to_hir();
-        let expected = hir::serialize_impl(parse_quote!(Test), input.generics, hir::serialize_composite(vec![]));
+        let actual = input.lower_se();
+        let expected = ir_se::serialize_impl(parse_quote!(Test), input.generics, ir_se::serialize_composite(vec![]));
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn derive_serialize_len_and_round() {
+    fn lower_se_len_and_round() {
         let input = Struct {
             name: parse_quote!(Test),
             generics: Generics::default(),
@@ -238,17 +238,17 @@ mod tests {
             fields: vec![],
         };
 
-        let actual = input.to_hir();
-        let expected = hir::serialize_impl(
+        let actual = input.lower_se();
+        let expected = ir_se::serialize_impl(
             parse_quote!(Test),
             Generics::default(),
-            hir::serialize_composite(vec![hir::pad(12), hir::align(8)]),
+            ir_se::serialize_composite(vec![ir_se::pad(12), ir_se::align(8)]),
         );
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn derive_serialize_direct_fields() {
+    fn lower_se_direct_fields() {
         let input = Struct {
             name: parse_quote!(Test),
             generics: Generics::default(),
@@ -267,13 +267,13 @@ mod tests {
             ],
         };
 
-        let actual = input.to_hir();
-        let expected = hir::serialize_impl(
+        let actual = input.lower_se();
+        let expected = ir_se::serialize_impl(
             parse_quote!(Test),
             Generics::default(),
-            hir::serialize_composite(vec![
-                hir::enclose(hir::serialize_object(parse_quote!(&self.foo)), "foo".into()),
-                hir::enclose(hir::serialize_object(parse_quote!(&self.bar)), "bar".into()),
+            ir_se::serialize_composite(vec![
+                ir_se::enclose(ir_se::serialize_object(parse_quote!(&self.foo)), "foo".into()),
+                ir_se::enclose(ir_se::serialize_object(parse_quote!(&self.bar)), "bar".into()),
             ]),
         );
         assert_eq!(actual, expected);

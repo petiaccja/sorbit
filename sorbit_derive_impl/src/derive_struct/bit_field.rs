@@ -2,9 +2,9 @@ use syn::{Expr, Ident, Type, parse_quote};
 
 use crate::{
     derive_struct::{
-        bit_field_attribute::BitFieldAttribute, direct_field::derive_serialize_with_layout, packed_field::PackedField,
+        bit_field_attribute::BitFieldAttribute, direct_field::lower_se_with_layout, packed_field::PackedField,
     },
-    hir,
+    ir_se,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,11 +15,11 @@ pub struct BitField {
 }
 
 impl BitField {
-    pub fn to_hir(&self) -> hir::Expr {
-        hir::chain_with_vars(
+    pub fn lower_se(&self) -> ir_se::Expr {
+        ir_se::chain_with_vars(
             vec![
-                derive_serialize_bit_field(&self.attribute.repr, &parse_quote!(self), &self.members),
-                derive_serialize_with_layout(
+                lower_se_bit_field(&self.attribute.repr, &parse_quote!(self), &self.members),
+                lower_se_with_layout(
                     &parse_quote!(&bit_field.into_bits()),
                     Some(&self.name.to_string()),
                     self.attribute.offset,
@@ -32,20 +32,20 @@ impl BitField {
     }
 }
 
-fn derive_serialize_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> hir::Expr {
+fn lower_se_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> ir_se::Expr {
     let members = members.iter().map(|member| {
         let name = &member.name;
         let name_str = match &member.name {
             syn::Member::Named(ident) => ident.to_string(),
             syn::Member::Unnamed(index) => index.index.to_string(),
         };
-        hir::enclose(
-            hir::pack_object(parse_quote!(bit_field), parse_quote!(&#parent.#name), member.attribute.bits.clone()),
+        ir_se::enclose(
+            ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&#parent.#name), member.attribute.bits.clone()),
             name_str,
         )
     });
 
-    hir::pack_bit_field(parse_quote!(bit_field), repr.clone(), members.collect())
+    ir_se::pack_bit_field(parse_quote!(bit_field), repr.clone(), members.collect())
 }
 
 #[cfg(test)]
@@ -60,7 +60,7 @@ mod tests {
     };
 
     #[test]
-    fn derive_serialize_bit_field_multiple() {
+    fn lower_se_bit_field_multiple() {
         let members = [
             PackedField {
                 name: parse_quote!(foo),
@@ -73,30 +73,36 @@ mod tests {
                 attribute: PackedFieldAttribute { storage: parse_quote!(_bf), bits: 9..10 },
             },
         ];
-        let actual = derive_serialize_bit_field(&parse_quote!(u16), &parse_quote!(self), &members);
-        let expected = hir::pack_bit_field(
+        let actual = lower_se_bit_field(&parse_quote!(u16), &parse_quote!(self), &members);
+        let expected = ir_se::pack_bit_field(
             parse_quote!(bit_field),
             parse_quote!(u16),
             vec![
-                hir::enclose(hir::pack_object(parse_quote!(bit_field), parse_quote!(&self.foo), 4..7), "foo".into()),
-                hir::enclose(hir::pack_object(parse_quote!(bit_field), parse_quote!(&self.bar), 9..10), "bar".into()),
+                ir_se::enclose(
+                    ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&self.foo), 4..7),
+                    "foo".into(),
+                ),
+                ir_se::enclose(
+                    ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&self.bar), 9..10),
+                    "bar".into(),
+                ),
             ],
         );
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn to_hir_empty() {
+    fn lower_se_empty() {
         let input = BitField {
             name: parse_quote!(bf),
             attribute: BitFieldAttribute { repr: parse_quote!(u16), ..Default::default() },
             members: vec![],
         };
-        let actual = input.to_hir();
-        let expected = hir::chain_with_vars(
+        let actual = input.lower_se();
+        let expected = ir_se::chain_with_vars(
             vec![
-                hir::pack_bit_field(parse_quote!(bit_field), parse_quote!(u16), vec![]),
-                hir::enclose(hir::serialize_object(parse_quote!(&bit_field.into_bits())), "bf".into()),
+                ir_se::pack_bit_field(parse_quote!(bit_field), parse_quote!(u16), vec![]),
+                ir_se::enclose(ir_se::serialize_object(parse_quote!(&bit_field.into_bits())), "bf".into()),
             ],
             vec![Some(parse_quote!(bit_field))],
         );

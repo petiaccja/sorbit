@@ -22,7 +22,7 @@ impl DeriveObject {
 
     pub fn derive_serialize(&self) -> TokenStream {
         match self {
-            DeriveObject::Struct(item) => item.to_hir().to_token_stream(),
+            DeriveObject::Struct(item) => item.lower_se().to_token_stream(),
             DeriveObject::Enum(item) => item.derive_serialize(),
         }
     }
