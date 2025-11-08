@@ -1,5 +1,3 @@
-use proc_macro2::TokenStream;
-use quote::ToTokens as _;
 use syn::{Expr, Index, Member, Type, parse_quote};
 
 use crate::{derive_struct::direct_field_attribute::DirectFieldAttribute, hir};
@@ -35,10 +33,6 @@ impl DirectField {
             self.attribute.align,
             self.attribute.round,
         )
-    }
-
-    pub fn derive_serialize(&self) -> TokenStream {
-        self.to_hir().to_token_stream()
     }
 }
 

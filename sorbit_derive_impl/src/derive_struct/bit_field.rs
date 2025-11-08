@@ -1,5 +1,3 @@
-use proc_macro2::TokenStream;
-use quote::ToTokens;
 use syn::{Expr, Ident, Type, parse_quote};
 
 use crate::{
@@ -31,10 +29,6 @@ impl BitField {
             ],
             vec![Some(parse_quote!(bit_field))],
         )
-    }
-
-    pub fn derive_serialize(&self) -> TokenStream {
-        self.to_hir().to_token_stream()
     }
 }
 
