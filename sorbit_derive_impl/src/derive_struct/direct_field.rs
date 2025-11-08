@@ -20,7 +20,7 @@ impl DirectField {
         Ok(Self { name, ty, attribute })
     }
 
-    pub fn to_hir(&self) -> hir::ast::Expr {
+    pub fn to_hir(&self) -> hir::Expr {
         let member = &self.name;
         let name = match &self.name {
             Member::Named(ident) => ident.to_string(),
@@ -42,7 +42,7 @@ pub fn derive_serialize_with_layout(
     offset: Option<u64>,
     align: Option<u64>,
     round: Option<u64>,
-) -> hir::ast::Expr {
+) -> hir::Expr {
     let serialized = hir::serialize_object(value.clone());
 
     let rounded = match round {

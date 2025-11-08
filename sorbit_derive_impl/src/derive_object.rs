@@ -1,4 +1,5 @@
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use syn::DeriveInput;
 use syn::spanned::Spanned;
 
@@ -21,14 +22,14 @@ impl DeriveObject {
 
     pub fn derive_serialize(&self) -> TokenStream {
         match self {
-            DeriveObject::Struct(item) => item.derive_serialize(),
+            DeriveObject::Struct(item) => item.to_hir().to_token_stream(),
             DeriveObject::Enum(item) => item.derive_serialize(),
         }
     }
 
     pub fn derive_deserialize(&self) -> TokenStream {
         match self {
-            DeriveObject::Struct(item) => item.derive_deserialize(),
+            DeriveObject::Struct(item) => item.lower_de().to_token_stream(),
             DeriveObject::Enum(item) => item.derive_deserialize(),
         }
     }

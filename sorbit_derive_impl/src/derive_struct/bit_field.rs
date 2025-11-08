@@ -15,7 +15,7 @@ pub struct BitField {
 }
 
 impl BitField {
-    pub fn to_hir(&self) -> hir::ast::Expr {
+    pub fn to_hir(&self) -> hir::Expr {
         hir::chain_with_vars(
             vec![
                 derive_serialize_bit_field(&self.attribute.repr, &parse_quote!(self), &self.members),
@@ -32,7 +32,7 @@ impl BitField {
     }
 }
 
-fn derive_serialize_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> hir::ast::Expr {
+fn derive_serialize_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> hir::Expr {
     let members = members.iter().map(|member| {
         let name = &member.name;
         let name_str = match &member.name {

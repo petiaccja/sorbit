@@ -1,9 +1,8 @@
 use std::iter::once;
 
 use itertools::Either;
-use proc_macro2::{Span, TokenStream};
-use quote::{ToTokens, quote};
-use syn::parse_quote;
+use proc_macro2::Span;
+use quote::ToTokens;
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use crate::derive_struct::binary_field::BinaryField;
@@ -11,6 +10,7 @@ use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
 use crate::derive_struct::source_field::SourceField;
 use crate::derive_struct::struct_attribute::StructAttribute;
+use crate::{hir, ir_de};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -77,57 +77,17 @@ impl Struct {
         Ok(Self { name, generics, attributes, fields })
     }
 
-    pub fn derive_serialize(&self) -> TokenStream {
-        let name = &self.name;
-        let serialize_trait = quote! { ::sorbit::serialize::Serialize };
-        let serializer_trait = quote! { ::sorbit::serialize::Serializer };
-        let serializer_arg: syn::Expr = parse_quote! { serializer };
-        let serializer_ty: syn::Type = parse_quote! { S };
-        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        let fields = self.fields.iter().map(|field| field.derive_serialize());
+    pub fn to_hir(&self) -> hir::SerializeImpl {
+        let fields = self.fields.iter().map(|field| field.to_hir());
+        let pad_after = self.attributes.len.map(|len| hir::pad(len)).into_iter();
+        let align_after = self.attributes.round.map(|round| hir::align(round)).into_iter();
 
-        let len = match self.attributes.len {
-            Some(len) => quote! { #serializer_trait::pad(#serializer_arg, #len)?; },
-            None => quote! {},
-        };
-
-        let round = match self.attributes.round {
-            Some(round) => quote! { #serializer_trait::align(#serializer_arg, #round)?; },
-            None => quote! {},
-        };
-
-        quote! {
-            impl #impl_generics #serialize_trait for #name #ty_generics #where_clause{
-                fn serialize<#serializer_ty: #serializer_trait>(
-                    &self,
-                    #serializer_arg: &mut #serializer_ty
-                ) -> ::core::result::Result<#serializer_ty::Success, #serializer_ty::Error> {
-                    #serializer_trait::serialize_composite(#serializer_arg, |#serializer_arg| {
-                        #(#fields?;)*
-                        #len
-                        #round
-                        #serializer_trait::serialize_nothing(#serializer_arg)
-                    })
-                }
-            }
-        }
+        let body = hir::serialize_composite(fields.chain(pad_after).chain(align_after).collect());
+        hir::serialize_impl(self.name.clone(), self.generics.clone(), body)
     }
 
-    pub fn derive_deserialize(&self) -> TokenStream {
-        let name = &self.name;
-        let deserialize_trait = quote! { ::sorbit::deserialize::Deserialize };
-        let deserializer_trait = quote! { ::sorbit::deserialize::Deserializer };
-        let deserializer_arg = quote! { deserializer };
-        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
-        quote! {
-            impl #impl_generics #deserialize_trait for #name #ty_generics #where_clause{
-                fn deserialize<D: #deserializer_trait>(
-                    #deserializer_arg: &mut D
-                ) -> ::core::result::Result<Self, D::Error> {
-                    todo!()
-                }
-            }
-        }
+    pub fn lower_de(&self) -> ir_de::DeserializeImpl {
+        ir_de::deserialize_impl(self.name.clone(), self.generics.clone())
     }
 }
 
@@ -264,22 +224,9 @@ mod tests {
             fields: vec![],
         };
 
-        let output = input.derive_serialize();
-        let expected = quote! {
-            impl<'x, T: Clone> ::sorbit::serialize::Serialize for Test<'x, T>
-                where T: Default
-            {
-                fn serialize<S: ::sorbit::serialize::Serializer>(
-                    &self,
-                    serializer: &mut S
-                ) -> ::core::result::Result<S::Success, S::Error> {
-                    ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
-                        ::sorbit::serialize::Serializer::serialize_nothing(serializer)
-                    })
-                }
-            }
-        };
-        assert_eq!(output.to_string(), expected.to_string());
+        let actual = input.to_hir();
+        let expected = hir::serialize_impl(parse_quote!(Test), input.generics, hir::serialize_composite(vec![]));
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -291,23 +238,13 @@ mod tests {
             fields: vec![],
         };
 
-        let output = input.derive_serialize();
-        let expected = quote! {
-            impl ::sorbit::serialize::Serialize for Test
-            {
-                fn serialize<S: ::sorbit::serialize::Serializer>(
-                    &self,
-                    serializer: &mut S
-                ) -> ::core::result::Result<S::Success, S::Error> {
-                    ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
-                        ::sorbit::serialize::Serializer::pad(serializer, 12u64)?;
-                        ::sorbit::serialize::Serializer::align(serializer, 8u64)?;
-                        ::sorbit::serialize::Serializer::serialize_nothing(serializer)
-                    })
-                }
-            }
-        };
-        assert_eq!(output.to_string(), expected.to_string());
+        let actual = input.to_hir();
+        let expected = hir::serialize_impl(
+            parse_quote!(Test),
+            Generics::default(),
+            hir::serialize_composite(vec![hir::pad(12), hir::align(8)]),
+        );
+        assert_eq!(actual, expected);
     }
 
     #[test]
@@ -330,74 +267,15 @@ mod tests {
             ],
         };
 
-        let output = input.derive_serialize();
-        let expected = quote! {
-            impl ::sorbit::serialize::Serialize for Test {
-                fn serialize<S: ::sorbit::serialize::Serializer>(
-                    &self,
-                    serializer: &mut S
-                ) -> ::core::result::Result<S::Success, S::Error> {
-                    ::sorbit::serialize::Serializer::serialize_composite(serializer, |serializer| {
-                        ::sorbit::serialize::Serialize::serialize(&self.foo, serializer).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "foo"))?;
-                        ::sorbit::serialize::Serialize::serialize(&self.bar, serializer).map_err(|err| ::sorbit::error::SerializeError::enclose(err, "bar"))?;
-                        ::sorbit::serialize::Serializer::serialize_nothing(serializer)
-                    })
-                }
-            }
-        };
-        assert_eq!(output.to_string(), expected.to_string());
-    }
-
-    #[test]
-    fn derive_deserialize_empty() {
-        let input = Struct {
-            name: parse_quote!(Test),
-            generics: Generics::default(),
-            attributes: StructAttribute::default(),
-            fields: vec![],
-        };
-
-        let output = input.derive_deserialize();
-        let expected = quote! {
-            impl ::sorbit::deserialize::Deserialize for Test {
-                fn deserialize<D: ::sorbit::deserialize::Deserializer>(
-                    deserializer: &mut D
-                ) -> ::core::result::Result<Self, D::Error> {
-                    todo!()
-                }
-            }
-        };
-        assert_eq!(output.to_string(), expected.to_string());
-    }
-
-    #[test]
-    fn derive_deserialize_generic() {
-        #[rustfmt::skip]
-        let input: DeriveInput = parse_quote!(
-            struct Ignore<'x, T: Clone>
-            where
-                T: Default {}
+        let actual = input.to_hir();
+        let expected = hir::serialize_impl(
+            parse_quote!(Test),
+            Generics::default(),
+            hir::serialize_composite(vec![
+                hir::enclose(hir::serialize_object(parse_quote!(&self.foo)), "foo".into()),
+                hir::enclose(hir::serialize_object(parse_quote!(&self.bar)), "bar".into()),
+            ]),
         );
-
-        let input = Struct {
-            name: parse_quote!(Test),
-            generics: input.generics,
-            attributes: StructAttribute::default(),
-            fields: vec![],
-        };
-
-        let output = input.derive_deserialize();
-        let expected = quote! {
-            impl<'x, T: Clone> ::sorbit::deserialize::Deserialize for Test<'x, T>
-                where T: Default
-            {
-                fn deserialize<D: ::sorbit::deserialize::Deserializer>(
-                    deserializer: &mut D
-                ) -> ::core::result::Result<Self, D::Error> {
-                    todo!()
-                }
-            }
-        };
-        assert_eq!(output.to_string(), expected.to_string());
+        assert_eq!(actual, expected);
     }
 }

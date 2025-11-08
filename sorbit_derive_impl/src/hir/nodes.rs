@@ -2,9 +2,10 @@ use std::ops::Range;
 
 use quote::{ToTokens, quote};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(unused)]
-pub struct ImplSerialize {
+#[derive(Clone, PartialEq, Eq)]
+pub struct SerializeImpl {
+    pub name: syn::Ident,
+    pub generics: syn::Generics,
     pub body: Expr,
 }
 
@@ -199,6 +200,12 @@ impl Expr {
 // Implement Debug trait.
 //------------------------------------------------------------------------------
 
+impl std::fmt::Debug for SerializeImpl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "impl Serialize for {} {{ {:?} }}", self.name, self.body)
+    }
+}
+
 impl std::fmt::Debug for Pad {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "pad({})", self.until)
@@ -304,11 +311,15 @@ impl std::fmt::Debug for Expr {
 //------------------------------------------------------------------------------
 
 struct SerializerTrait;
+struct SerializerOutputTrait;
+struct SerializerType;
 struct SerializeTrait;
 struct SerializerObject;
 struct ErrorTrait;
 
 const SERIALIZER_TRAIT: SerializerTrait = SerializerTrait {};
+const SERIALIZER_OUTPUT_TRAIT: SerializerOutputTrait = SerializerOutputTrait {};
+const SERIALIZER_TYPE: SerializerType = SerializerType {};
 const SERIALIZE_TRAIT: SerializeTrait = SerializeTrait {};
 const SERIALIZER_OBJECT: SerializerObject = SerializerObject {};
 const ERROR_TRAIT: ErrorTrait = ErrorTrait {};
@@ -316,6 +327,18 @@ const ERROR_TRAIT: ErrorTrait = ErrorTrait {};
 impl ToTokens for SerializerTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(quote! {::sorbit::serialize::Serializer});
+    }
+}
+
+impl ToTokens for SerializerOutputTrait {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        tokens.extend(quote! {::sorbit::serialize::SerializerOutput});
+    }
+}
+
+impl ToTokens for SerializerType {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        tokens.extend(quote! {S});
     }
 }
 
@@ -334,6 +357,28 @@ impl ToTokens for SerializerObject {
 impl ToTokens for ErrorTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(quote! {::sorbit::error::SerializeError});
+    }
+}
+
+impl ToTokens for SerializeImpl {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        let name = &self.name;
+        let body = &self.body;
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        tokens.extend(quote! {
+            impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause{
+                fn serialize<#SERIALIZER_TYPE: #SERIALIZER_TRAIT>(
+                    &self,
+                    #SERIALIZER_OBJECT: &mut #SERIALIZER_TYPE
+                ) -> ::core::result::Result<
+                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Success,
+                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Error
+                    >
+                {
+                    #body
+                }
+            }
+        });
     }
 }
 
