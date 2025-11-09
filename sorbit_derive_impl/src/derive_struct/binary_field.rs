@@ -1,6 +1,6 @@
 use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::direct_field::DirectField;
-use crate::ir_se;
+use crate::{ir_de, ir_se};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinaryField {
@@ -13,6 +13,13 @@ impl BinaryField {
         match self {
             BinaryField::Direct(direct_field) => direct_field.lower_se(),
             BinaryField::Bit(bit_field) => bit_field.lower_se(),
+        }
+    }
+
+    pub fn lower_de(&self) -> Vec<ir_de::Let> {
+        match self {
+            BinaryField::Direct(direct_field) => direct_field.lower_de(),
+            BinaryField::Bit(bit_field) => bit_field.lower_de(),
         }
     }
 }

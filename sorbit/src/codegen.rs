@@ -10,8 +10,12 @@
 //! standalone code generation is not possible due to Rust's generic programming
 //! limitations.
 
-use crate::{bit::Error as BitError, serialize::SerializerOutput};
+use crate::{bit::Error as BitError, deserialize::Deserializer, serialize::SerializerOutput};
 
-pub fn bit_error_to_error<S: SerializerOutput>(_: &S, bit_error: BitError) -> S::Error {
+pub fn bit_error_to_error_se<S: SerializerOutput>(_: &S, bit_error: BitError) -> S::Error {
+    bit_error.into()
+}
+
+pub fn bit_error_to_error_de<D: Deserializer>(_: &D, bit_error: BitError) -> D::Error {
     bit_error.into()
 }

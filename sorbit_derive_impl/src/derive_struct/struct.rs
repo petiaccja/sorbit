@@ -3,11 +3,13 @@ use std::iter::once;
 use itertools::Either;
 use proc_macro2::Span;
 use quote::ToTokens;
+use syn::parse_quote;
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use crate::derive_struct::binary_field::BinaryField;
 use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
+use crate::derive_struct::field_utils::member_to_ident;
 use crate::derive_struct::source_field::SourceField;
 use crate::derive_struct::struct_attribute::StructAttribute;
 use crate::{ir_de, ir_se};
@@ -87,7 +89,23 @@ impl Struct {
     }
 
     pub fn lower_de(&self) -> ir_de::DeserializeImpl {
-        ir_de::deserialize_impl(self.name.clone(), self.generics.clone())
+        let name = &self.name;
+        let statements = self.fields.iter().map(|field| field.lower_de().into_iter()).flatten().collect();
+        let fields = self
+            .fields
+            .iter()
+            .map(|field| match field {
+                BinaryField::Direct(direct_field) => vec![member_to_ident(&direct_field.name)],
+                BinaryField::Bit(bit_field) => {
+                    bit_field.members.iter().map(|member| member_to_ident(&member.name)).collect()
+                }
+            })
+            .map(|idents| idents.into_iter())
+            .flatten()
+            .collect();
+        let result = ir_de::ok(ir_de::construct(parse_quote!(#name), fields));
+        let body = ir_de::deserialize_composite(ir_de::block(statements, result));
+        ir_de::deserialize_impl(self.name.clone(), self.generics.clone(), body)
     }
 }
 

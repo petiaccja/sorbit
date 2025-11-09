@@ -7,7 +7,6 @@ use sorbit::serialize::{DeferredSerialize, DeferredSerializer, Section, Serializ
 use sorbit::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]
-// #[snap(4)]
 struct IPv4Header {
     version: u8, // version_ihl: 4..8
     ihl: u8,     // version_ihl: 0..4; defer: ihl(self)

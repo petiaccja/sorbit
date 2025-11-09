@@ -217,17 +217,20 @@ impl std::fmt::Debug for Align {
         write!(f, "align({})", self.multiple_of)
     }
 }
+
 impl std::fmt::Debug for SerializeNothing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "serialize_nothing()")
     }
 }
+
 impl std::fmt::Debug for SerializeObject {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = &self.object;
         write!(f, "serialize({})", quote! {#value})
     }
 }
+
 impl std::fmt::Debug for SerializeComposite {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "composite{{")?;
@@ -366,6 +369,7 @@ impl ToTokens for SerializeImpl {
         let body = &self.body;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         tokens.extend(quote! {
+            #[automatically_derived]
             impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause{
                 fn serialize<#SERIALIZER_TYPE: #SERIALIZER_TRAIT>(
                     &self,
@@ -473,7 +477,7 @@ impl ToTokens for PackObject {
         let Range { start, end } = &self.bit_range;
         tokens.extend(quote! {
             #bit_field.pack(#object, #start..#end)
-                      .map_err(|err| ::sorbit::codegen::bit_error_to_error(#SERIALIZER_OBJECT, err))
+                      .map_err(|err| ::sorbit::codegen::bit_error_to_error_se(#SERIALIZER_OBJECT, err))
         });
     }
 }

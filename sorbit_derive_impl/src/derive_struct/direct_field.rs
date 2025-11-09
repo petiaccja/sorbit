@@ -1,6 +1,10 @@
-use syn::{Expr, Index, Member, Type, parse_quote};
+use syn::{Index, Member, Type, parse_quote};
 
-use crate::{derive_struct::direct_field_attribute::DirectFieldAttribute, ir_se};
+use crate::derive_struct::direct_field_attribute::DirectFieldAttribute;
+use crate::derive_struct::field_utils::member_to_ident;
+use crate::{ir_de, ir_se};
+
+use super::field_utils::{lower_de_with_layout, lower_se_with_layout, member_to_string};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectField {
@@ -22,10 +26,7 @@ impl DirectField {
 
     pub fn lower_se(&self) -> ir_se::Expr {
         let member = &self.name;
-        let name = match &self.name {
-            Member::Named(ident) => ident.to_string(),
-            Member::Unnamed(index) => index.index.to_string(),
-        };
+        let name = member_to_string(&self.name);
         lower_se_with_layout(
             &parse_quote!(&self.#member),
             Some(&name),
@@ -34,35 +35,17 @@ impl DirectField {
             self.attribute.round,
         )
     }
-}
 
-pub fn lower_se_with_layout(
-    value: &Expr,
-    name: Option<&str>,
-    offset: Option<u64>,
-    align: Option<u64>,
-    round: Option<u64>,
-) -> ir_se::Expr {
-    let serialized = ir_se::serialize_object(value.clone());
-
-    let rounded = match round {
-        Some(round) => ir_se::serialize_composite(vec![serialized, ir_se::align(round)]),
-        None => serialized,
-    };
-
-    let aligned = match align {
-        Some(align) => ir_se::chain(vec![ir_se::align(align), rounded]).flatten(),
-        None => rounded,
-    };
-
-    let offseted = match offset {
-        Some(offset) => ir_se::chain(vec![ir_se::pad(offset), aligned]).flatten(),
-        None => aligned,
-    };
-
-    match name {
-        Some(display_name) => ir_se::enclose(offseted, display_name.into()),
-        None => offseted,
+    pub fn lower_de(&self) -> Vec<ir_de::Let> {
+        let name = member_to_string(&self.name);
+        lower_de_with_layout(
+            &member_to_ident(&self.name),
+            &self.ty,
+            Some(&name),
+            self.attribute.offset,
+            self.attribute.align,
+            self.attribute.round,
+        )
     }
 }
 
@@ -128,27 +111,14 @@ mod tests {
     }
 
     #[test]
-    fn lower_se_display_name() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), Some("foo"), None, None, None);
-        let expected = ir_se::enclose(ir_se::serialize_object(parse_quote!(foo)), "foo".into());
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_se_offset_and_align() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), None, Some(4), Some(6), None);
-        let expected = ir_se::chain(vec![
-            ir_se::pad(4),
-            ir_se::align(6),
-            ir_se::serialize_object(parse_quote!(foo)),
-        ]);
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_se_round() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), None, None, None, Some(6));
-        let expected = ir_se::serialize_composite(vec![ir_se::serialize_object(parse_quote!(foo)), ir_se::align(6)]);
-        assert_eq!(actual, expected);
+    fn lower_de_all() {
+        let input =
+            DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
+        let expected = [ir_de::r#let(
+            parse_quote!(foo),
+            ir_de::r#try(ir_de::enclose(ir_de::deserialize_object(parse_quote!(i32)), "foo".into())),
+        )];
+        let actual = input.lower_de();
+        assert_eq!(&actual, &expected);
     }
 }
