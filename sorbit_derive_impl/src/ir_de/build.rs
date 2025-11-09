@@ -17,8 +17,8 @@ pub fn r#try(expr: Expr) -> Expr {
 pub fn block(statements: Vec<Let>, result: Expr) -> Expr {
     Block { statements, result: result.into() }.into()
 }
-pub fn construct(ty: syn::Type, args: Vec<syn::Ident>) -> Expr {
-    Construct { ty, args }.into()
+pub fn construct(ty: syn::Type, fields: Vec<syn::Member>, args: Vec<Expr>) -> Expr {
+    Construct { ty, fields, args }.into()
 }
 pub fn name(ident: syn::Ident) -> Expr {
     Name { ident }.into()

@@ -95,6 +95,15 @@ impl Struct {
             .fields
             .iter()
             .map(|field| match field {
+                BinaryField::Direct(direct_field) => vec![direct_field.name.clone()],
+                BinaryField::Bit(bit_field) => bit_field.members.iter().map(|member| member.name.clone()).collect(),
+            })
+            .flatten()
+            .collect();
+        let args = self
+            .fields
+            .iter()
+            .map(|field| match field {
                 BinaryField::Direct(direct_field) => vec![member_to_ident(&direct_field.name)],
                 BinaryField::Bit(bit_field) => {
                     bit_field.members.iter().map(|member| member_to_ident(&member.name)).collect()
@@ -102,8 +111,9 @@ impl Struct {
             })
             .map(|idents| idents.into_iter())
             .flatten()
+            .map(|ident| ir_de::name(ident))
             .collect();
-        let result = ir_de::ok(ir_de::construct(parse_quote!(#name), fields));
+        let result = ir_de::ok(ir_de::construct(parse_quote!(#name), fields, args));
         let body = ir_de::deserialize_composite(ir_de::block(statements, result));
         ir_de::deserialize_impl(self.name.clone(), self.generics.clone(), body)
     }

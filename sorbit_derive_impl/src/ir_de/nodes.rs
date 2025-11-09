@@ -35,7 +35,8 @@ pub struct Block {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Construct {
     pub ty: syn::Type,
-    pub args: Vec<syn::Ident>,
+    pub fields: Vec<syn::Member>,
+    pub args: Vec<Expr>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -234,8 +235,8 @@ impl std::fmt::Debug for Block {
 impl std::fmt::Debug for Construct {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} {{ ", self.ty.to_token_stream())?;
-        for arg in &self.args {
-            write!(f, "{arg:?}, ")?;
+        for (field, arg) in self.fields.iter().zip(self.args.iter()) {
+            write!(f, "{field:?}: {arg:?}, ")?;
         }
         write!(f, "}}")
     }
@@ -444,8 +445,8 @@ impl ToTokens for Block {
 impl ToTokens for Construct {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         let ty = &self.ty;
-        let args = &self.args;
-        tokens.extend(quote! { #ty { #(#args),* } });
+        let initializers = self.fields.iter().zip(self.args.iter()).map(|(field, arg)| quote! {#field: #arg});
+        tokens.extend(quote! { #ty { #(#initializers),* } });
     }
 }
 
