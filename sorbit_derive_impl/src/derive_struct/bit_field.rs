@@ -131,7 +131,10 @@ mod tests {
             ir_de::r#let(Some(parse_quote!(bf)), ir_de::bit_field_from(ir_de::name(parse_quote!(bf)))),
             ir_de::r#let(
                 Some(parse_quote!(foo)),
-                ir_de::r#try(ir_de::unpack_object(parse_quote!(&bf), parse_quote!(u8), 4..7)),
+                ir_de::r#try(ir_de::enclose(
+                    ir_de::unpack_object(parse_quote!(bf), parse_quote!(u8), 4..7),
+                    "foo".into(),
+                )),
             ),
         ];
         assert_eq!(actual, expected);

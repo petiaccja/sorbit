@@ -48,15 +48,14 @@ impl DeferredSerialize for IPv4Header {
         let self_section = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 b1_section = 0u8.serialize(s)?.into(); // Version and IHL.
-                pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)}).unwrap().serialize(s)?;
+                pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)})?.serialize(s)?;
                 self.total_length.serialize(s)?;
                 self.identification.serialize(s)?;
                 pack_bit_field!(u16 => {
                     (self.dont_fragment, 14..=14),
                     (self.more_fragments, 13..=13),
                     (self.fragment_offset, 0..13)
-                })
-                .unwrap()
+                })?
                 .serialize(s)?;
                 self.time_to_live.serialize(s)?;
                 self.protocol.serialize(s)?;
@@ -93,8 +92,7 @@ impl Deserialize for IPv4Header {
                 let total_length = u16::deserialize(s)?;
                 let identification = u16::deserialize(s)?;
                 let (dont_fragment, more_fragments, fragment_offset) =
-                    unpack_bit_field!(u16::deserialize(s)? => { (bool, 14..=14), (bool, 13..=13), (u16, 0..13)})
-                        .unwrap();
+                    unpack_bit_field!(u16::deserialize(s)? => { (bool, 14..=14), (bool, 13..=13), (u16, 0..13)})?;
                 let time_to_live = u8::deserialize(s)?;
                 let protocol = u8::deserialize(s)?;
                 let header_checksum = u16::deserialize(s)?;
