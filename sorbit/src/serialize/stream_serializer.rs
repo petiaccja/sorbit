@@ -251,7 +251,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
     }
 }
 
-impl crate::serialize::Section for Section {
+impl crate::serialize::Span for Section {
     fn start(&self) -> u64 {
         self.0.start
     }

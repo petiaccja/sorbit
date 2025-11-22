@@ -6,7 +6,7 @@ use crate::io::{Read, Seek};
 ///
 /// For example, for the [IPv4 header](https://en.wikipedia.org/wiki/IPv4#Header),
 /// the section that belongs to *Time to Live* would be bytes 8 to 9 (non-inclusive).
-pub trait Section {
+pub trait Span {
     fn len(&self) -> u64;
     fn start(&self) -> u64;
     fn end(&self) -> u64;
@@ -102,26 +102,26 @@ pub trait Serializer: SerializerOutput {
     ///
     /// ## Returned value
     ///
-    /// For deferred serializers, the [`Section`] for the entire composite is
+    /// For deferred serializers, the [`Span`] for the entire composite is
     /// returned on success.
-    fn serialize_composite<O>(
+    fn serialize_composite<Output>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
     ) -> Result<Self::Success, Self::Error>;
 
     /// Temporarily change the byte order.
     ///
     /// All items serialized in the `serialize_members` function will use the
     /// selected byte order. This call can be nested as necessary.
-    fn with_byte_order<O>(
+    fn with_byte_order<Output>(
         &mut self,
         byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<O, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
     ) -> Result<Self::Success, Self::Error>;
 }
 
 /// A serializer that can introspect previously serialized objects.
-pub trait Lookback: SerializerOutput<Success: Section> {
+pub trait Lookback: SerializerOutput<Success: Span> {
     type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
     type SectionReader: Read + Seek;
 
@@ -154,11 +154,11 @@ pub trait Lookback: SerializerOutput<Success: Section> {
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
     /// lengths can be computed by [`Lookback::analyze_section`].
-    fn update_section<O>(
+    fn update_section<Output>(
         &mut self,
         section: &Self::Success,
-        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<O, Self::Error>,
-    ) -> Result<O, Self::Error>;
+        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
+    ) -> Result<Output, Self::Error>;
 }
 
 pub trait DeferredSerializer:

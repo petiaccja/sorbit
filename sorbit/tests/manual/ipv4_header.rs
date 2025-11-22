@@ -3,7 +3,7 @@ use sorbit::deserialize::{Deserialize, Deserializer, StreamDeserializer};
 use sorbit::error::Error;
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::serialize::{DeferredSerialize, DeferredSerializer, Section, Serialize, Serializer, StreamSerializer};
+use sorbit::serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, Span, StreamSerializer};
 use sorbit::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,7 +25,7 @@ struct IPv4Header {
 }
 
 impl IPv4Header {
-    fn ihl(section: &impl Section) -> u8 {
+    fn ihl(section: &impl Span) -> u8 {
         core::cmp::min(u8::MAX as u64, section.len()) as u8 / 4
     }
 
