@@ -88,12 +88,12 @@ impl<Stream: Write> StreamSerializer<Stream> {
         self.stream_pos - self.composite_base
     }
 
-    fn nest<O>(
+    fn nest<Output>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self) -> Result<O, Error>,
+        serialize_members: impl FnOnce(&mut Self) -> Result<Output, Error>,
         change_byte_order: Option<ByteOrder>,
         change_base: Option<u64>,
-    ) -> Result<Section, Error> {
+    ) -> Result<(Section, Output), Error> {
         // Borrow self's buffer and create a nested serializer.
         let mut nested = Self {
             stream: self.stream.take(),
@@ -110,7 +110,8 @@ impl<Stream: Write> StreamSerializer<Stream> {
             self.stream = stream;
             self.stream_pos = stream_len;
         };
-        result.map(|_| Section(start_pos..self.stream_pos))
+        let section = Section(start_pos..self.stream_pos);
+        result.map(|output| (section, output))
     }
 }
 
@@ -183,18 +184,18 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         self.write_until(global_until, 0)
     }
 
-    fn serialize_composite<O>(
+    fn serialize_composite<Output>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
+    ) -> Result<(Self::Success, Output), Self::Error> {
         self.nest(serialize_members, None, Some(self.stream_pos))
     }
 
-    fn with_byte_order<O>(
+    fn with_byte_order<Output>(
         &mut self,
         byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<O, Self::Error>,
-    ) -> Result<Self::Success, Self::Error> {
+        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
+    ) -> Result<(Self::Success, Output), Self::Error> {
         self.nest(serialize_members, Some(byte_order), None)
     }
 }
@@ -203,11 +204,11 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
     type SectionSerializer = StreamSerializer<PartialStream<Stream>>;
     type SectionReader = PartialStream<Stream>;
 
-    fn update_section<O>(
+    fn update_section<Output>(
         &mut self,
         section: &Self::Success,
-        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<O, Self::Error>,
-    ) -> Result<O, Self::Error> {
+        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
+    ) -> Result<Output, Self::Error> {
         let range = &section.0;
         let stream_pos = self.stream.as_mut().expect(UNWRAP_STREAM_MSG).stream_position()?;
         let stream = self.stream.take().expect(UNWRAP_STREAM_MSG);

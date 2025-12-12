@@ -1,10 +1,15 @@
-use syn::{Expr, Ident, Type, parse_quote};
+use syn::Ident;
 
 use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
-use crate::derive_struct::field_utils::{lower_de_with_layout, member_to_ident, member_to_string};
-use crate::{ir_de, ir_se};
+use crate::derive_struct::field_utils::{
+    lower_alignment, lower_deserialization_rounding, lower_offset, lower_serialization_rounding,
+};
+use crate::ssa_ir::ir::{Operation, Region, Value};
+use crate::ssa_ir::ops::{
+    EmptyBitFieldOp, ExecuteOp, IntoBitFieldOp, IntoRawBitsOp, MemberOp, PackBitFieldOp, RefOp, SelfOp, TryOp,
+    UnpackBitFieldOp, YieldOp,
+};
 
-use super::field_utils::lower_se_with_layout;
 use super::packed_field::PackedField;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,63 +20,84 @@ pub struct BitField {
 }
 
 impl BitField {
-    pub fn lower_se(&self) -> ir_se::Expr {
-        ir_se::chain_with_vars(
-            vec![
-                lower_se_bit_field(&self.attribute.repr, &parse_quote!(self), &self.members),
-                lower_se_with_layout(
-                    &parse_quote!(&bit_field.into_bits()),
-                    Some(&self.name.to_string()),
-                    self.attribute.offset,
-                    self.attribute.align,
-                    self.attribute.round,
-                ),
-            ],
-            vec![Some(parse_quote!(bit_field))],
-        )
+    pub fn lower_se(&self, serializer: Value) -> Operation {
+        ExecuteOp::new(Region::new(0, |_| {
+            let mut ops = Vec::new();
+            let self_ = SelfOp::new();
+            let self_output = self_.output();
+            ops.extend([self_.operation].into_iter());
+
+            let mut bf = EmptyBitFieldOp::new(self.attribute.repr.clone()).operation;
+
+            for member in &self.members {
+                let mem = MemberOp::new(self_output.clone(), member.name.clone(), true);
+                let maybe_new_bf =
+                    PackBitFieldOp::new(serializer.clone(), mem.output(), bf.output(0), member.attribute.bits.clone());
+                let new_bf = TryOp::new(maybe_new_bf.output()).operation;
+                ops.extend(
+                    [
+                        std::mem::replace(&mut bf, new_bf),
+                        mem.operation,
+                        maybe_new_bf.operation,
+                    ]
+                    .into_iter(),
+                );
+            }
+
+            let raw = IntoRawBitsOp::new(bf.output(0));
+            let raw_ref = RefOp::new(raw.output());
+            let raw_ref_out = raw_ref.output();
+            ops.extend([bf, raw.operation, raw_ref.operation].into_iter());
+
+            lower_offset(serializer.clone(), self.attribute.offset, true, &mut ops);
+            lower_alignment(serializer.clone(), self.attribute.align, true, &mut ops);
+            let output = lower_serialization_rounding(serializer, raw_ref_out, self.attribute.round, &mut ops);
+            ops.push(YieldOp::new(vec![output]).operation);
+
+            ops
+        }))
+        .operation
     }
 
-    pub fn lower_de(&self) -> Vec<ir_de::Let> {
-        let name = &self.name;
-        let bit_field = lower_de_with_layout(
-            &self.name,
-            &self.attribute.repr,
-            Some(self.name.to_string().as_str()),
-            self.attribute.offset,
-            self.attribute.align,
-            self.attribute.round,
-        );
-        let bit_field_from = ir_de::r#let(Some(name.clone()), ir_de::bit_field_from(ir_de::name(name.clone())));
-        let unpacks = lower_de_members(&parse_quote!(#name), self.members.iter());
-        bit_field.into_iter().chain(std::iter::once(bit_field_from)).chain(unpacks.into_iter()).collect()
+    pub fn lower_de(&self, deserializer: Value) -> Operation {
+        ExecuteOp::new(Region::new(0, |_| {
+            let mut ops = Vec::new();
+
+            lower_offset(deserializer.clone(), self.attribute.offset, false, &mut ops);
+            lower_alignment(deserializer.clone(), self.attribute.align, false, &mut ops);
+            let maybe_raw_bits = lower_deserialization_rounding(
+                deserializer,
+                self.attribute.repr.clone(),
+                self.attribute.round,
+                &mut ops,
+            );
+            let raw_bits = TryOp::new(maybe_raw_bits);
+            let bit_field = IntoBitFieldOp::new(raw_bits.output());
+            let bit_field_output = bit_field.output();
+            ops.extend([raw_bits.operation, bit_field.operation].into_iter());
+
+            let _unpacked = self
+                .members
+                .iter()
+                .map(|member| {
+                    let maybe_mem = UnpackBitFieldOp::new(
+                        member.ty.clone(),
+                        bit_field_output.clone(),
+                        member.attribute.bits.clone(),
+                    );
+                    let maybe_mem_output = maybe_mem.output();
+                    ops.extend([maybe_mem.operation].into_iter());
+                    maybe_mem_output
+                })
+                .collect();
+
+            let yield_ = YieldOp::new(_unpacked);
+            ops.extend([yield_.operation].into_iter());
+
+            ops
+        }))
+        .operation
     }
-}
-
-fn lower_se_bit_field(repr: &Type, parent: &Expr, members: &[PackedField]) -> ir_se::Expr {
-    let members = members.iter().map(|member| {
-        let name = &member.name;
-        let name_str = member_to_string(&member.name);
-        ir_se::enclose(
-            ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&#parent.#name), member.attribute.bits.clone()),
-            name_str,
-        )
-    });
-
-    ir_se::pack_bit_field(parse_quote!(bit_field), repr.clone(), members.collect())
-}
-
-fn lower_de_members<'a>(bit_field: &syn::Expr, members: impl Iterator<Item = &'a PackedField>) -> Vec<ir_de::Let> {
-    members
-        .map(|member| {
-            ir_de::r#let(
-                Some(member_to_ident(&member.name)),
-                ir_de::r#try(ir_de::enclose(
-                    ir_de::unpack_object(bit_field.clone(), member.ty.clone(), member.attribute.bits.clone()),
-                    member_to_string(&member.name),
-                )),
-            )
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -80,9 +106,12 @@ mod tests {
 
     use syn::parse_quote;
 
-    use crate::derive_struct::{
-        bit_field::BitField, bit_field_attribute::BitFieldAttribute, packed_field::PackedField,
-        packed_field_attribute::PackedFieldAttribute,
+    use crate::{
+        derive_struct::{
+            bit_field::BitField, bit_field_attribute::BitFieldAttribute, packed_field::PackedField,
+            packed_field_attribute::PackedFieldAttribute,
+        },
+        ssa_ir::ir::assert_matches,
     };
 
     fn make_empty() -> BitField {
@@ -93,82 +122,104 @@ mod tests {
         }
     }
 
-    fn make_one_member() -> BitField {
+    fn make_two_members() -> BitField {
         BitField {
             name: parse_quote!(bf),
             attribute: BitFieldAttribute { repr: parse_quote!(u16), ..Default::default() },
-            members: vec![PackedField {
-                name: parse_quote!(foo),
-                ty: parse_quote!(u8),
-                attribute: PackedFieldAttribute { storage: parse_quote!(bf), bits: 4..7 },
-            }],
+            members: vec![
+                PackedField {
+                    name: parse_quote!(foo),
+                    ty: parse_quote!(u8),
+                    attribute: PackedFieldAttribute { storage: parse_quote!(bf), bits: 4..7 },
+                },
+                PackedField {
+                    name: parse_quote!(bar),
+                    ty: parse_quote!(i8),
+                    attribute: PackedFieldAttribute { storage: parse_quote!(bf), bits: 0..4 },
+                },
+            ],
         }
     }
 
     #[test]
     fn lower_se_empty() {
         let input = make_empty();
-        let actual = input.lower_se();
-        let expected = ir_se::chain_with_vars(
-            vec![
-                ir_se::pack_bit_field(parse_quote!(bit_field), parse_quote!(u16), vec![]),
-                ir_se::enclose(ir_se::serialize_object(parse_quote!(&bit_field.into_bits())), "bf".into()),
-            ],
-            vec![Some(parse_quote!(bit_field))],
-        );
-        assert_eq!(actual, expected);
+        let serializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_se(serializer));
+        let pattern = "
+        %res = execute || [
+        %self = self
+            %bf = empty_bit_field [u16]
+            %raw = into_raw_bits %bf
+            %ref_raw = ref %raw
+            %s = serialize_object %serializer %ref_raw
+            yield %s
+        ]
+        ";
+        assert_matches!(op, pattern);
     }
 
     #[test]
-    fn lower_de_one_member() {
-        let input = make_one_member();
-        let actual = input.lower_de();
-        let expected = [
-            ir_de::r#let(
-                Some(parse_quote!(bf)),
-                ir_de::r#try(ir_de::enclose(ir_de::deserialize_object(parse_quote!(u16)), "bf".into())),
-            ),
-            ir_de::r#let(Some(parse_quote!(bf)), ir_de::bit_field_from(ir_de::name(parse_quote!(bf)))),
-            ir_de::r#let(
-                Some(parse_quote!(foo)),
-                ir_de::r#try(ir_de::enclose(
-                    ir_de::unpack_object(parse_quote!(bf), parse_quote!(u8), 4..7),
-                    "foo".into(),
-                )),
-            ),
-        ];
-        assert_eq!(actual, expected);
+    fn lower_se_two_members() {
+        let input = make_two_members();
+        let serializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_se(serializer));
+        let pattern = "
+        %res = execute || [
+            %self = self
+
+            %bf0 = empty_bit_field [u16]
+            
+            %foo = member [foo, &] %self
+            %maybe_bf1 = pack_bit_field [4..7] %serializer %foo %bf0
+            %bf1 = try %maybe_bf1
+
+            %bar = member [bar, &] %self
+            %maybe_bf2 = pack_bit_field [0..4] %serializer %bar %bf1
+            %bf2 = try %maybe_bf2
+
+            %raw = into_raw_bits %bf2
+            %ref_raw = ref %raw
+            %s = serialize_object %serializer %ref_raw
+            yield %s
+        ]        
+        ";
+        assert_matches!(op, pattern);
     }
 
     #[test]
-    fn lower_se_multiple() {
-        let members = [
-            PackedField {
-                name: parse_quote!(foo),
-                ty: parse_quote!(u8),
-                attribute: PackedFieldAttribute { storage: parse_quote!(_bf), bits: 4..7 },
-            },
-            PackedField {
-                name: parse_quote!(bar),
-                ty: parse_quote!(bool),
-                attribute: PackedFieldAttribute { storage: parse_quote!(_bf), bits: 9..10 },
-            },
-        ];
-        let actual = lower_se_bit_field(&parse_quote!(u16), &parse_quote!(self), &members);
-        let expected = ir_se::pack_bit_field(
-            parse_quote!(bit_field),
-            parse_quote!(u16),
-            vec![
-                ir_se::enclose(
-                    ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&self.foo), 4..7),
-                    "foo".into(),
-                ),
-                ir_se::enclose(
-                    ir_se::pack_object(parse_quote!(bit_field), parse_quote!(&self.bar), 9..10),
-                    "bar".into(),
-                ),
-            ],
-        );
-        assert_eq!(actual, expected);
+    fn lower_de_empty() {
+        let input = make_empty();
+        let deserializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_de(deserializer));
+        let pattern = "
+        execute || [
+            %s = deserialize_object [u16] %deserializer
+            %try_s = try %s
+            %bf = into_bit_field %try_s
+            yield
+        ]
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn lower_de_two_members() {
+        let input = make_two_members();
+        let deserializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_de(deserializer));
+        let pattern = "
+        %0, %1 = execute || [
+            %s = deserialize_object [u16] %deserializer
+            %try_s = try %s
+            %bf = into_bit_field %try_s
+
+            %maybe_foo = unpack_bit_field [u8, 4..7] %bf
+            %maybe_bar = unpack_bit_field [i8, 0..4] %bf
+
+            yield %maybe_foo, %maybe_bar
+        ]
+        ";
+        assert_matches!(op, pattern);
     }
 }

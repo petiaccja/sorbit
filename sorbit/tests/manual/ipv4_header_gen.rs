@@ -3,7 +3,9 @@ use sorbit::deserialize::{Deserialize, Deserializer, StreamDeserializer};
 use sorbit::error::Error;
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::serialize::{DeferredSerialize, DeferredSerializer, Serialize, Serializer, Span, StreamSerializer};
+use sorbit::serialize::{
+    DeferredSerialize, DeferredSerializer, Lookback, Serialize, Serializer, Span, StreamSerializer,
+};
 use sorbit::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -43,43 +45,44 @@ impl IPv4Header {
 
 impl DeferredSerialize for IPv4Header {
     fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
-        let (self_span, (b1_span, checksum_span)) = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
-            s.serialize_composite(|s| {
-                let b1_span = 0u8.serialize(s)?; // Version and IHL.
-                pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)})?.serialize(s)?;
-                self.total_length.serialize(s)?;
-                self.identification.serialize(s)?;
-                pack_bit_field!(u16 => {
-                    (self.dont_fragment, 14..=14),
-                    (self.more_fragments, 13..=13),
-                    (self.fragment_offset, 0..13)
-                })?
-                .serialize(s)?;
-                self.time_to_live.serialize(s)?;
-                self.protocol.serialize(s)?;
-                let checksum_span = 0u16.serialize(s)?;
-                self.source_address.serialize(s)?;
-                self.destination_address.serialize(s)?;
-                s.align(4)?;
-                Ok((b1_span, checksum_span))
+        serializer
+            .with_byte_order(ByteOrder::BigEndian, |s| {
+                s.serialize_composite(|s| {
+                    Ok((
+                        0u8.serialize(s)?, // Version and IHL.
+                        pack_bit_field!(u8 => {(self.dscp, 2..8), (self.ecn, 0..2)})?.serialize(s)?,
+                        self.total_length.serialize(s)?,
+                        self.identification.serialize(s)?,
+                        pack_bit_field!(u16 => {
+                            (self.dont_fragment, 14..=14),
+                            (self.more_fragments, 13..=13),
+                            (self.fragment_offset, 0..13)
+                        })?
+                        .serialize(s)?,
+                        self.time_to_live.serialize(s)?,
+                        self.protocol.serialize(s)?,
+                        0u16.serialize(s)?, // Checksum.
+                        self.source_address.serialize(s)?,
+                        self.destination_address.serialize(s)?,
+                    ))
+                    .and_then(|sections| {
+                        let _ = s.align(4)?;
+                        Ok(sections)
+                    })
+                })
+                .and_then(|(s_self, (s_ver_ihl, _, _, _, _, _, _, s_checksum, _, _))| {
+                    Ok((
+                        // Update IHL.
+                        s.update_section(&s_ver_ihl, |s| {
+                            pack_bit_field!(u8 => {(self.version, 4..8), (Self::ihl(&s_self), 0..4)})?.serialize(s)
+                        })?,
+                        // Update checksum.
+                        s.analyze_section(&s_self, |reader| Self::checksum(reader))
+                            .and_then(|checksum| s.update_section(&s_checksum, |s| checksum.serialize(s)))?,
+                    ))
+                })
             })
-            .map(|(_, members)| members)
-        })?;
-        // Update IHL.
-        {
-            let ihl = Self::ihl(&self_span);
-            serializer.update_section(&b1_span, |s| {
-                pack_bit_field!(u8 => {(self.version, 4..8), (ihl, 0..4)}).unwrap().serialize(s)
-            })?;
-        }
-        // Update checksum.
-        {
-            let checksum = serializer.analyze_section(&self_span, |reader| Self::checksum(reader))?;
-            serializer.update_section(&checksum_span, |s| {
-                s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
-            })?;
-        }
-        Ok(self_span)
+            .map(|(s_self, _)| s_self)
     }
 }
 
@@ -87,8 +90,8 @@ impl Deserialize for IPv4Header {
     fn deserialize<D: Deserializer>(deserializer: &mut D) -> Result<Self, D::Error> {
         deserializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.deserialize_composite(|s| {
-                let (version, ihl) = unpack_bit_field!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) }).unwrap();
-                let (dscp, ecn) = unpack_bit_field!(u8::deserialize(s)? => {(u8, 2..8), (u8, 0..2)}).unwrap();
+                let (version, ihl) = unpack_bit_field!(u8::deserialize(s)? => { (u8,  4..8), (u8, 0..4) })?;
+                let (dscp, ecn) = unpack_bit_field!(u8::deserialize(s)? => {(u8, 2..8), (u8, 0..2)})?;
                 let total_length = u16::deserialize(s)?;
                 let identification = u16::deserialize(s)?;
                 let (dont_fragment, more_fragments, fragment_offset) =

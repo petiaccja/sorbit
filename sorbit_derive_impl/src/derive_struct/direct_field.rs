@@ -1,10 +1,11 @@
-use syn::{Index, Member, Type, parse_quote};
+use syn::{Index, Member, Type};
 
 use crate::derive_struct::direct_field_attribute::DirectFieldAttribute;
-use crate::derive_struct::field_utils::member_to_ident;
-use crate::{ir_de, ir_se};
-
-use super::field_utils::{lower_de_with_layout, lower_se_with_layout, member_to_string};
+use crate::derive_struct::field_utils::{
+    lower_alignment, lower_deserialization_rounding, lower_offset, lower_serialization_rounding,
+};
+use crate::ssa_ir::ir::{Operation, Region, Value};
+use crate::ssa_ir::ops::{ExecuteOp, MemberOp, SelfOp, YieldOp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectField {
@@ -24,35 +25,45 @@ impl DirectField {
         Ok(Self { name, ty, attribute })
     }
 
-    pub fn lower_se(&self) -> ir_se::Expr {
-        let member = &self.name;
-        let name = member_to_string(&self.name);
-        lower_se_with_layout(
-            &parse_quote!(&self.#member),
-            Some(&name),
-            self.attribute.offset,
-            self.attribute.align,
-            self.attribute.round,
-        )
+    pub fn lower_se(&self, serializer: Value) -> Operation {
+        ExecuteOp::new(Region::new(0, |_| {
+            let mut ops = Vec::new();
+
+            let self_ = SelfOp::new();
+            let object = MemberOp::new(self_.output(), self.name.clone(), true);
+            let object_val = object.output();
+            ops.extend([self_.operation, object.operation].into_iter());
+
+            lower_offset(serializer.clone(), self.attribute.offset, true, &mut ops);
+            lower_alignment(serializer.clone(), self.attribute.align, true, &mut ops);
+            let output = lower_serialization_rounding(serializer, object_val, self.attribute.round, &mut ops);
+            ops.push(YieldOp::new(vec![output]).operation);
+
+            ops
+        }))
+        .operation
     }
 
-    pub fn lower_de(&self) -> Vec<ir_de::Let> {
-        let name = member_to_string(&self.name);
-        lower_de_with_layout(
-            &member_to_ident(&self.name),
-            &self.ty,
-            Some(&name),
-            self.attribute.offset,
-            self.attribute.align,
-            self.attribute.round,
-        )
+    pub fn lower_de(&self, deserializer: Value) -> Operation {
+        ExecuteOp::new(Region::new(0, |_| {
+            let mut ops = Vec::new();
+            lower_offset(deserializer.clone(), self.attribute.offset, false, &mut ops);
+            lower_alignment(deserializer.clone(), self.attribute.align, false, &mut ops);
+            let output = lower_deserialization_rounding(deserializer, self.ty.clone(), self.attribute.round, &mut ops);
+            ops.push(YieldOp::new(vec![output]).operation);
+            ops
+        }))
+        .operation
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::ssa_ir::ir::assert_matches;
+
     use super::*;
 
+    use quote::ToTokens;
     use syn::parse_quote;
 
     #[test]
@@ -102,23 +113,99 @@ mod tests {
     }
 
     #[test]
-    fn lower_se_all() {
+    fn lower_se_default() {
         let input =
             DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
-        let expected = ir_se::enclose(ir_se::serialize_object(parse_quote!(&self.foo)), "foo".into());
-        let actual = input.lower_se();
-        assert_eq!(actual, expected);
+        let serializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_se(serializer));
+        let pattern = "
+        %out = execute || [
+            %self = self
+            %foo = member [foo, &] %self
+            %res = serialize_object %serializer, %foo
+            yield %res
+        ]
+        ";
+        assert_matches!(op, pattern);
     }
 
     #[test]
-    fn lower_de_all() {
+    fn lower_se_layout() {
+        let input = DirectField {
+            name: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            attribute: DirectFieldAttribute { offset: Some(1), align: Some(2), round: Some(3) },
+        };
+        let serializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_se(serializer.clone()));
+        let pattern = "
+        %out = execute || [
+            %self = self
+            %foo = member [foo, &] %self
+
+            %offset = pad [1] %serializer
+            %try_offset = try %offset
+
+            %align = align [2] %serializer
+            %try_align = try %align
+            
+            %res = serialize_composite %serializer |%s_inner| [
+                %res_inner = serialize_object %s_inner, %foo
+                %round = align [3] %s_inner
+                %try_round = try %round
+                yield %res_inner
+            ]
+            %res_try = try %res
+            %res_1 = member [1, *] %res_try
+            %res_ok = ok %res_1
+            yield %res_ok
+        ]
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn lower_de_empty() {
         let input =
             DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
-        let expected = [ir_de::r#let(
-            parse_quote!(foo),
-            ir_de::r#try(ir_de::enclose(ir_de::deserialize_object(parse_quote!(i32)), "foo".into())),
-        )];
-        let actual = input.lower_de();
-        assert_eq!(&actual, &expected);
+        let deserializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_de(deserializer));
+        let pattern = "
+        %out = execute || [
+            %res = deserialize_object [i32] %serializer
+            yield %res
+        ]
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn lower_de_layout() {
+        let input = DirectField {
+            name: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            attribute: DirectFieldAttribute { offset: Some(1), align: Some(2), round: Some(3) },
+        };
+        let deserializer = Value::new_standalone();
+        let op = format!("{:#?}", input.lower_de(deserializer.clone()));
+        let pattern = "
+        %out = execute || [
+            %offset = pad [1] %deserializer
+            %try_offset = try %offset
+
+            %align = align [2] %deserializer
+            %try_align = try %align
+
+            %res = deserialize_composite %deserializer |%des_inner| [
+                %res_inner = deserialize_object [i32] %des_inner
+                %round = align [3] %des_inner
+                %try_round = try %round
+                yield %res_inner
+            ]
+            yield %res
+        ]
+        ";
+        assert_matches!(op, pattern);
+        println!("{}", input.lower_de(deserializer).to_token_stream())
     }
 }

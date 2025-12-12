@@ -107,7 +107,7 @@ pub trait Serializer: SerializerOutput {
     fn serialize_composite<Output>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
-    ) -> Result<Self::Success, Self::Error>;
+    ) -> Result<(Self::Success, Output), Self::Error>;
 
     /// Temporarily change the byte order.
     ///
@@ -117,7 +117,7 @@ pub trait Serializer: SerializerOutput {
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
-    ) -> Result<Self::Success, Self::Error>;
+    ) -> Result<(Self::Success, Output), Self::Error>;
 }
 
 /// A serializer that can introspect previously serialized objects.

@@ -1,7 +1,10 @@
 use quote::format_ident;
-use syn::parse_quote;
 
-use crate::{ir_de, ir_se};
+use crate::ssa_ir::ir::{Operation, Region, Value};
+use crate::ssa_ir::ops::{
+    AlignOp, DeserializeCompositeOp, DeserializeObjectOp, MemberOp, OkOp, PadOp, SerializeCompositeOp,
+    SerializeObjectOp, TryOp, YieldOp,
+};
 
 pub fn member_to_ident(member: &syn::Member) -> syn::Ident {
     match member {
@@ -17,139 +20,97 @@ pub fn member_to_string(member: &syn::Member) -> String {
     }
 }
 
-pub fn lower_se_with_layout(
-    value: &syn::Expr,
-    name: Option<&str>,
-    offset: Option<u64>,
-    align: Option<u64>,
-    round: Option<u64>,
-) -> ir_se::Expr {
-    let serialized = ir_se::serialize_object(value.clone());
-
-    let rounded = match round {
-        Some(round) => ir_se::serialize_composite(vec![serialized, ir_se::align(round)]),
-        None => serialized,
-    };
-
-    let aligned = match align {
-        Some(align) => ir_se::chain(vec![ir_se::align(align), rounded]).flatten(),
-        None => rounded,
-    };
-
-    let offseted = match offset {
-        Some(offset) => ir_se::chain(vec![ir_se::pad(offset), aligned]).flatten(),
-        None => aligned,
-    };
-
-    match name {
-        Some(display_name) => ir_se::enclose(offseted, display_name.into()),
-        None => offseted,
+pub fn lower_offset(serializer: Value, offset: Option<u64>, serializing: bool, ops: &mut Vec<Operation>) {
+    if let Some(offset) = offset {
+        let offset = PadOp::new(serializer, offset, serializing);
+        let try_offset = TryOp::new(offset.output());
+        ops.extend([offset.operation, try_offset.operation].into_iter());
     }
 }
 
-pub fn lower_de_with_layout(
-    ident: &syn::Ident,
-    ty: &syn::Type,
-    name: Option<&str>,
-    offset: Option<u64>,
-    align: Option<u64>,
-    round: Option<u64>,
-) -> Vec<ir_de::Let> {
-    let deserialized = ir_de::deserialize_object(ty.clone());
-
-    let rounded = match round {
-        Some(round) => ir_de::deserialize_composite(ir_de::block(
-            vec![
-                ir_de::r#let(Some(parse_quote!(value)), ir_de::r#try(deserialized)),
-                ir_de::r#let(None, ir_de::r#try(ir_de::align(round))),
-            ],
-            ir_de::ok(ir_de::name(parse_quote!(value))),
-        )),
-        None => deserialized,
-    };
-
-    let statements = [
-        offset.map(|offset| (None, ir_de::pad(offset))),
-        align.map(|align| (None, ir_de::align(align))),
-        Some((Some(ident.clone()), rounded)),
-    ];
-
-    statements
-        .into_iter()
-        .filter_map(|s| s)
-        .map(|(ident, expr)| match name {
-            Some(name) => (ident, ir_de::enclose(expr, name.into())),
-            None => (ident, expr),
-        })
-        .map(|(ident, expr)| ir_de::r#let(ident, ir_de::r#try(expr)))
-        .collect()
+pub fn lower_alignment(serializer: Value, align: Option<u64>, serializing: bool, ops: &mut Vec<Operation>) {
+    if let Some(align) = align {
+        let align = AlignOp::new(serializer, align, serializing);
+        let try_offset = TryOp::new(align.output());
+        ops.extend([align.operation, try_offset.operation].into_iter());
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use syn::parse_quote;
-
-    use super::*;
-
-    #[test]
-    fn lower_se_display_name() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), Some("foo"), None, None, None);
-        let expected = ir_se::enclose(ir_se::serialize_object(parse_quote!(foo)), "foo".into());
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_se_offset_and_align() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), None, Some(4), Some(6), None);
-        let expected = ir_se::chain(vec![
-            ir_se::pad(4),
-            ir_se::align(6),
-            ir_se::serialize_object(parse_quote!(foo)),
-        ]);
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_se_round() {
-        let actual = lower_se_with_layout(&parse_quote!(foo), None, None, None, Some(6));
-        let expected = ir_se::serialize_composite(vec![ir_se::serialize_object(parse_quote!(foo)), ir_se::align(6)]);
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_de_display_name() {
-        let actual = lower_de_with_layout(&parse_quote!(foo), &parse_quote!(i32), Some("foo"), None, None, None);
-        let expected = [ir_de::r#let(
-            Some(parse_quote!(foo)),
-            ir_de::r#try(ir_de::enclose(ir_de::deserialize_object(parse_quote!(i32)), "foo".into())),
-        )];
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_de_offset_and_align() {
-        let actual = lower_de_with_layout(&parse_quote!(foo), &parse_quote!(i32), None, Some(4), Some(6), None);
-        let expected = [
-            ir_de::r#let(None, ir_de::r#try(ir_de::pad(4))),
-            ir_de::r#let(None, ir_de::r#try(ir_de::align(6))),
-            ir_de::r#let(Some(parse_quote!(foo)), ir_de::r#try(ir_de::deserialize_object(parse_quote!(i32)))),
-        ];
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn lower_de_round() {
-        let actual = lower_de_with_layout(&parse_quote!(foo), &parse_quote!(i32), None, None, None, Some(6));
-        let expected = [ir_de::r#let(
-            Some(parse_quote!(foo)),
-            ir_de::r#try(ir_de::deserialize_composite(ir_de::block(
+pub fn lower_serialization_rounding(
+    serializer: Value,
+    object: Value,
+    round: Option<u64>,
+    ops: &mut Vec<Operation>,
+) -> Value {
+    if let Some(round) = round {
+        let serialize = SerializeCompositeOp::new(
+            serializer,
+            Region::new(1, |arguments| {
+                let serializer = &arguments[0];
+                let serialize = SerializeObjectOp::new(serializer.clone(), object);
+                let round = AlignOp::new(serializer.clone(), round, true);
+                let try_round = TryOp::new(round.output());
+                let yield_ = YieldOp::new(vec![serialize.output()]);
                 vec![
-                    ir_de::r#let(Some(parse_quote!(value)), ir_de::r#try(ir_de::deserialize_object(parse_quote!(i32)))),
-                    ir_de::r#let(None, ir_de::r#try(ir_de::align(6))),
-                ],
-                ir_de::ok(ir_de::name(parse_quote!(value))),
-            ))),
-        )];
-        assert_eq!(actual, expected);
+                    serialize.operation,
+                    round.operation,
+                    try_round.operation,
+                    yield_.operation,
+                ]
+            }),
+        );
+        let try_serialize = TryOp::new(serialize.output());
+        let serialize_1 = MemberOp::new(try_serialize.output(), syn::Member::Unnamed(syn::Index::from(1)), false);
+        let ok_serialize = OkOp::new(serialize_1.output());
+        let output = ok_serialize.output();
+        ops.extend(
+            [
+                serialize.operation,
+                try_serialize.operation,
+                serialize_1.operation,
+                ok_serialize.operation,
+            ]
+            .into_iter(),
+        );
+        output
+    } else {
+        let serialize = SerializeObjectOp::new(serializer, object);
+        let output = serialize.output();
+        ops.extend([serialize.operation].into_iter());
+        output
+    }
+}
+
+pub fn lower_deserialization_rounding(
+    deserializer: Value,
+    ty: syn::Type,
+    round: Option<u64>,
+    ops: &mut Vec<Operation>,
+) -> Value {
+    if let Some(round) = round {
+        let deserialize = DeserializeCompositeOp::new(
+            deserializer,
+            Region::new(1, |arguments| {
+                let deserializer = &arguments[0];
+                let deserialize = DeserializeObjectOp::new(deserializer.clone(), ty);
+                let round = AlignOp::new(deserializer.clone(), round, false);
+                let try_round = TryOp::new(round.output());
+                let yield_ = YieldOp::new(vec![deserialize.output()]);
+                vec![
+                    deserialize.operation,
+                    round.operation,
+                    try_round.operation,
+                    yield_.operation,
+                ]
+            }),
+        );
+        let output = deserialize.output();
+        ops.extend([deserialize.operation].into_iter());
+        output
+    } else {
+        let deserialize = DeserializeObjectOp::new(deserializer, ty);
+        let output = deserialize.output();
+        ops.extend([deserialize.operation].into_iter());
+        output
     }
 }

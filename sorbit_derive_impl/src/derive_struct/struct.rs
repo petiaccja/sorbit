@@ -3,16 +3,19 @@ use std::iter::once;
 use itertools::Either;
 use proc_macro2::Span;
 use quote::ToTokens;
-use syn::parse_quote;
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use crate::derive_struct::binary_field::BinaryField;
 use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
-use crate::derive_struct::field_utils::member_to_ident;
+use crate::derive_struct::field_utils::{lower_alignment, lower_offset};
 use crate::derive_struct::source_field::SourceField;
 use crate::derive_struct::struct_attribute::StructAttribute;
-use crate::{ir_de, ir_se};
+use crate::ssa_ir::ir::Region;
+use crate::ssa_ir::ops::{
+    DeserializeCompositeOp, ImplDeserializeOp, ImplSerializeOp, MemberOp, OkOp, SerializeCompositeOp,
+    SerializeNothingOp, StructOp, TryOp, TupleOp, YieldOp,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -79,51 +82,126 @@ impl Struct {
         Ok(Self { name, generics, attributes, fields })
     }
 
-    pub fn lower_se(&self) -> ir_se::SerializeImpl {
-        let fields = self.fields.iter().map(|field| field.lower_se());
-        let pad_after = self.attributes.len.map(|len| ir_se::pad(len)).into_iter();
-        let align_after = self.attributes.round.map(|round| ir_se::align(round)).into_iter();
+    pub fn lower_se(&self) -> ImplSerializeOp {
+        let body = Region::new(1, |arguments| {
+            let serializer = &arguments[0];
+            let maybe_composite = SerializeCompositeOp::new(
+                serializer.clone(),
+                Region::new(1, |arguments| {
+                    let serializer = &arguments[0];
 
-        let body = ir_se::serialize_composite(fields.chain(pad_after).chain(align_after).collect());
-        ir_se::serialize_impl(self.name.clone(), self.generics.clone(), body)
+                    let mut layout_ops = Vec::new();
+                    lower_offset(serializer.clone(), self.attributes.len, true, &mut layout_ops);
+                    lower_alignment(serializer.clone(), self.attributes.round, true, &mut layout_ops);
+
+                    if self.fields.is_empty() {
+                        let serialize_nothing = SerializeNothingOp::new(serializer.clone());
+                        let yield_ = YieldOp::new(vec![serialize_nothing.output()]);
+                        std::iter::once(serialize_nothing.operation)
+                            .chain(layout_ops.into_iter())
+                            .chain(std::iter::once(yield_.operation))
+                            .collect()
+                    } else {
+                        let maybe_spans: Vec<_> =
+                            self.fields.iter().map(|field| field.lower_se(serializer.clone())).collect();
+                        let spans: Vec<_> =
+                            maybe_spans.iter().map(|maybe_span| TryOp::new(maybe_span.output(0))).collect();
+                        let span_tuple = TupleOp::new(spans.iter().map(|span| span.output()).collect());
+                        let ok_span_tuple = OkOp::new(span_tuple.output());
+                        let yield_ = YieldOp::new(vec![ok_span_tuple.output()]);
+                        maybe_spans
+                            .into_iter()
+                            .chain(spans.into_iter().map(|span| span.operation))
+                            .chain(std::iter::once(span_tuple.operation))
+                            .chain(std::iter::once(ok_span_tuple.operation))
+                            .chain(layout_ops.into_iter())
+                            .chain(std::iter::once(yield_.operation))
+                            .collect()
+                    }
+                }),
+            );
+            let composite = TryOp::new(maybe_composite.output());
+            let span = MemberOp::new(composite.output(), syn::Member::Unnamed(syn::Index::from(0)), false);
+            let ok_span = OkOp::new(span.output());
+            let yield_ = YieldOp::new(vec![ok_span.output()]);
+            vec![
+                maybe_composite.operation,
+                composite.operation,
+                span.operation,
+                ok_span.operation,
+                yield_.operation,
+            ]
+        });
+        ImplSerializeOp::new(self.name.clone(), self.generics.clone(), body)
     }
 
-    pub fn lower_de(&self) -> ir_de::DeserializeImpl {
-        let name = &self.name;
-        let statements = self.fields.iter().map(|field| field.lower_de().into_iter()).flatten().collect();
-        let fields = self
-            .fields
-            .iter()
-            .map(|field| match field {
-                BinaryField::Direct(direct_field) => vec![direct_field.name.clone()],
-                BinaryField::Bit(bit_field) => bit_field.members.iter().map(|member| member.name.clone()).collect(),
-            })
-            .flatten()
-            .collect();
-        let args = self
-            .fields
-            .iter()
-            .map(|field| match field {
-                BinaryField::Direct(direct_field) => vec![member_to_ident(&direct_field.name)],
-                BinaryField::Bit(bit_field) => {
-                    bit_field.members.iter().map(|member| member_to_ident(&member.name)).collect()
-                }
-            })
-            .map(|idents| idents.into_iter())
-            .flatten()
-            .map(|ident| ir_de::name(ident))
-            .collect();
-        let result = ir_de::ok(ir_de::construct(parse_quote!(#name), fields, args));
-        let body = ir_de::deserialize_composite(ir_de::block(statements, result));
-        ir_de::deserialize_impl(self.name.clone(), self.generics.clone(), body)
+    pub fn lower_de(&self) -> ImplDeserializeOp {
+        let body = Region::new(1, |arguments| {
+            let deserializer = &arguments[0];
+            let maybe_composite = DeserializeCompositeOp::new(
+                deserializer.clone(),
+                Region::new(1, |arguments| {
+                    let deserializer = &arguments[0];
+
+                    let mut layout_ops = Vec::new();
+                    lower_offset(deserializer.clone(), self.attributes.len, false, &mut layout_ops);
+                    lower_alignment(deserializer.clone(), self.attributes.round, false, &mut layout_ops);
+
+                    let maybe_des_ops: Vec<_> =
+                        self.fields.iter().map(|field| field.lower_de(deserializer.clone())).collect();
+                    let mut des_ops = Vec::new();
+                    let mut field_names = Vec::new();
+                    let mut field_values = Vec::new();
+                    for (field, maybe_des_op) in self.fields.iter().zip(maybe_des_ops.iter()) {
+                        match field {
+                            BinaryField::Direct(direct_field) => {
+                                let des_op = TryOp::new(maybe_des_op.output(0));
+                                field_names.push(direct_field.name.clone());
+                                field_values.push(des_op.output());
+                                des_ops.extend([des_op.operation].into_iter());
+                            }
+                            BinaryField::Bit(bit_field) => {
+                                for (idx, member) in bit_field.members.iter().enumerate() {
+                                    let des_op = TryOp::new(maybe_des_op.output(idx));
+                                    field_names.push(member.name.clone());
+                                    field_values.push(des_op.output());
+                                    des_ops.extend([des_op.operation].into_iter());
+                                }
+                            }
+                        }
+                    }
+
+                    let struct_ = StructOp::new(
+                        syn::TypePath { qself: None, path: syn::Path::from(self.name.clone()) }.into(),
+                        field_names.into_iter().zip(field_values.into_iter()).collect(),
+                    );
+                    let ok_struct = OkOp::new(struct_.output());
+                    let yield_ = YieldOp::new(vec![ok_struct.output()]);
+
+                    maybe_des_ops
+                        .into_iter()
+                        .chain(des_ops.into_iter())
+                        .chain(layout_ops.into_iter())
+                        .chain([struct_.operation, ok_struct.operation, yield_.operation].into_iter())
+                        .collect()
+                }),
+            );
+
+            let yield_ = YieldOp::new(vec![maybe_composite.output()]);
+            vec![maybe_composite.operation, yield_.operation]
+        });
+        ImplDeserializeOp::new(self.name.clone(), self.generics.clone(), body)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::derive_struct::{
-        direct_field::DirectField, direct_field_attribute::DirectFieldAttribute, packed_field::PackedField,
-        packed_field_attribute::PackedFieldAttribute,
+    use crate::{
+        derive_struct::{
+            direct_field::DirectField, direct_field_attribute::DirectFieldAttribute, packed_field::PackedField,
+            packed_field_attribute::PackedFieldAttribute,
+        },
+        ssa_ir::ir::assert_matches,
     };
 
     use super::*;
@@ -252,9 +330,20 @@ mod tests {
             fields: vec![],
         };
 
-        let actual = input.lower_se();
-        let expected = ir_se::serialize_impl(parse_quote!(Test), input.generics, ir_se::serialize_composite(vec![]));
-        assert_eq!(actual, expected);
+        let op = format!("{:#?}", input.lower_se().operation);
+        let pattern = "
+        impl_serialize |%serializer| [
+            %maybe_composite = serialize_composite %serializer |%s_inner| [
+                %nothing = serialize_nothing %s_inner
+                yield %nothing
+            ]
+            %composite = try %maybe_composite
+            %span = member [0, *] %composite
+            %ok_span = ok %span
+            yield %ok_span
+        ]        
+        ";
+        assert_matches!(op, pattern);
     }
 
     #[test]
@@ -266,13 +355,24 @@ mod tests {
             fields: vec![],
         };
 
-        let actual = input.lower_se();
-        let expected = ir_se::serialize_impl(
-            parse_quote!(Test),
-            Generics::default(),
-            ir_se::serialize_composite(vec![ir_se::pad(12), ir_se::align(8)]),
-        );
-        assert_eq!(actual, expected);
+        let op = format!("{:#?}", input.lower_se().operation);
+        let pattern = "
+        impl_serialize |%serializer| [
+            %maybe_composite = serialize_composite %serializer |%s_inner| [
+                %nothing = serialize_nothing %s_inner
+                %maybe_len = pad [12] %s_inner
+                %len = try %maybe_len
+                %maybe_round = align [8] %s_inner
+                %round = try %maybe_round
+                yield %nothing
+            ]
+            %composite = try %maybe_composite
+            %span = member [0, *] %composite
+            %ok_span = ok %span
+            yield %ok_span
+        ]
+        ";
+        assert_matches!(op, pattern);
     }
 
     #[test]
@@ -295,15 +395,85 @@ mod tests {
             ],
         };
 
-        let actual = input.lower_se();
-        let expected = ir_se::serialize_impl(
-            parse_quote!(Test),
-            Generics::default(),
-            ir_se::serialize_composite(vec![
-                ir_se::enclose(ir_se::serialize_object(parse_quote!(&self.foo)), "foo".into()),
-                ir_se::enclose(ir_se::serialize_object(parse_quote!(&self.bar)), "bar".into()),
-            ]),
+        let op = format!("{:#?}", input.lower_se().operation);
+        let pattern = "
+        impl_serialize |%serializer| [
+            %maybe_composite = serialize_composite %serializer |%s_inner| [
+                %maybe_span_foo = execute || [
+                    %self_foo = self
+                    %foo = member [foo, &] %self_foo
+                    %maybe_span_foo_i = serialize_object %s_inner, %foo
+                    yield %maybe_span_foo_i
+                ]
+
+                %maybe_span_bar = execute || [
+                    %self_bar = self
+                    %bar = member [bar, &] %self_bar
+                    %maybe_span_bar_i = serialize_object %s_inner, %bar
+                    yield %maybe_span_bar_i
+                ]
+
+                %span_foo = try %maybe_span_foo
+                %span_bar = try %maybe_span_bar
+                %spans = tuple %span_foo, %span_bar
+                %ok_spans = ok %spans
+                yield %ok_spans
+            ]
+            %composite = try %maybe_composite
+            %span = member [0, *] %composite
+            %ok_span = ok %span
+            yield %ok_span
+        ]        
+        ";
+        println!("{}", input.lower_se().operation.to_token_stream());
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn lower_de_generic() {
+        #[rustfmt::skip]
+        let input: DeriveInput = parse_quote!(
+            struct Ignore<'x, T: Clone>
+            where
+                T: Default {}
         );
-        assert_eq!(actual, expected);
+
+        let input = Struct {
+            name: parse_quote!(Test),
+            generics: input.generics,
+            attributes: StructAttribute::default(),
+            fields: vec![],
+        };
+
+        let op = format!("{:#?}", input.lower_de().operation);
+        let pattern = "
+        impl_deserialize |%deserializer| [
+            %maybe_composite = deserialize_composite %deserializer |%de_inner| [
+                %struct = struct [Test]
+                %ok_struct = ok %struct
+                yield %ok_struct
+            ]
+            yield %maybe_composite
+        ]        
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn lower_se_print_tokens() {
+        #[rustfmt::skip]
+        let input: DeriveInput = parse_quote!(
+            #[sorbit_bit_field(_b, repr(u16))]
+            struct Packing {
+                #[sorbit_bit_field(_b, bits(4..10))]
+                a: u8,
+                #[sorbit_bit_field(_b, bits(14..=15))]
+                b: bool,
+            }
+        );
+
+        let parsed = Struct::parse(&input).unwrap();
+
+        println!("{}", parsed.lower_de().operation.to_token_stream());
     }
 }
