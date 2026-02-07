@@ -432,6 +432,40 @@ impl AlignOp {
 }
 
 //------------------------------------------------------------------------------
+// AnnotateResultOp
+//------------------------------------------------------------------------------
+
+#[allow(unused)]
+pub struct AnnotateResultOp {
+    pub operation: Operation,
+}
+
+#[allow(unused)]
+impl AnnotateResultOp {
+    pub fn new(result: Value, annotation: String) -> Self {
+        Self {
+            operation: Operation::new(
+                "annotate".into(),
+                vec![annotation.clone()],
+                Box::new(move |op| Self::to_token_stream(op, &annotation)),
+                1,
+                vec![result],
+                vec![],
+            ),
+        }
+    }
+
+    pub fn to_token_stream(operation: &Operation, annotation: &str) -> TokenStream {
+        let result = &operation.inputs[0];
+        quote! { #result.map_err(|err| #ERROR_TRAIT::enclose(err, #annotation)) }
+    }
+
+    pub fn output(&self) -> Value {
+        self.operation.output(0)
+    }
+}
+
+//------------------------------------------------------------------------------
 // SerializeNothingOp
 //------------------------------------------------------------------------------
 
