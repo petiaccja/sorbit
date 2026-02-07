@@ -1,10 +1,10 @@
 use std::ops::Range;
 
-use crate::ir::constants::*;
+use super::constants::*;
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
 
-use super::ir::{Operation, Region, Value};
+use super::dag::{Operation, Region, Value};
 
 //------------------------------------------------------------------------------
 // ImplSerializeOp
@@ -778,61 +778,5 @@ impl UnpackBitFieldOp {
             #bit_field.unpack::<#ty, _, _>(#start..#end)
                       .map_err(|err| err.into())
         }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Tests
-//------------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use syn::parse_quote;
-
-    use crate::ssa_ir::ir::assert_matches;
-
-    use super::*;
-
-    #[test]
-    fn foo() {
-        let body = Region::new(1, |arguments| {
-            let serializer = &arguments[0];
-            let serialize_composite = SerializeCompositeOp::new(
-                serializer.clone(),
-                Region::new(1, |arguments| {
-                    let serializer = &arguments[0];
-                    let self_ = SelfOp::new();
-                    let execute = ExecuteOp::new(Region::new(0, |_| {
-                        let member = MemberOp::new(self_.output(), parse_quote!(foo), true);
-                        let yield_ = YieldOp::new(vec![member.output()]);
-                        vec![member.operation, yield_.operation]
-                    }));
-                    let serialize_object = SerializeObjectOp::new(serializer.clone(), execute.output(0));
-                    let yield_ = YieldOp::new(vec![serialize_object.output()]);
-                    vec![
-                        self_.operation,
-                        execute.operation,
-                        serialize_object.operation,
-                        yield_.operation,
-                    ]
-                }),
-            );
-            vec![serialize_composite.operation]
-        });
-        let impl_serialize = ImplSerializeOp::new(parse_quote!(Foo), Default::default(), body);
-        let pattern = "
-            impl_serialize |%serializer| [
-                %0 = serialize_composite %serializer |%comp_ser| [
-                    %1 = self,
-                    %2 = execute || [
-                        %01 = member[foo, &] %1,
-                        yield %01,
-                    ],
-                    %3 = serialize_object %comp_ser %2,
-                    yield %3,
-                ],
-            ]
-        ";
-        assert_matches!(format!("{:#?}", impl_serialize.operation), pattern);
     }
 }

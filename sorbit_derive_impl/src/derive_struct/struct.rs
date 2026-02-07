@@ -11,8 +11,8 @@ use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
 use crate::derive_struct::field_utils::{lower_alignment, lower_offset};
 use crate::derive_struct::source_field::SourceField;
 use crate::derive_struct::struct_attribute::StructAttribute;
-use crate::ssa_ir::ir::Region;
-use crate::ssa_ir::ops::{
+use crate::ir::dag::Region;
+use crate::ir::ops::{
     DeserializeCompositeOp, ImplDeserializeOp, ImplSerializeOp, MemberOp, OkOp, SerializeCompositeOp,
     SerializeNothingOp, StructOp, TryOp, TupleOp, YieldOp,
 };
@@ -201,7 +201,7 @@ mod tests {
             direct_field::DirectField, direct_field_attribute::DirectFieldAttribute, packed_field::PackedField,
             packed_field_attribute::PackedFieldAttribute,
         },
-        ssa_ir::ir::assert_matches,
+        ir::pattern_match::assert_matches,
     };
 
     use super::*;

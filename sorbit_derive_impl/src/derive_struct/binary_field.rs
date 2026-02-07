@@ -1,6 +1,6 @@
 use crate::derive_struct::bit_field::BitField;
 use crate::derive_struct::direct_field::DirectField;
-use crate::ssa_ir::ir::{Operation, Value};
+use crate::ir::dag::{Operation, Value};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BinaryField {

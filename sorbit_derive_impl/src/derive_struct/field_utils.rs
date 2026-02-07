@@ -1,7 +1,7 @@
 use quote::format_ident;
 
-use crate::ssa_ir::ir::{Operation, Region, Value};
-use crate::ssa_ir::ops::{
+use crate::ir::dag::{Operation, Region, Value};
+use crate::ir::ops::{
     AlignOp, DeserializeCompositeOp, DeserializeObjectOp, MemberOp, OkOp, PadOp, SerializeCompositeOp,
     SerializeObjectOp, TryOp, YieldOp,
 };

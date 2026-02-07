@@ -4,8 +4,8 @@ use crate::derive_struct::bit_field_attribute::BitFieldAttribute;
 use crate::derive_struct::field_utils::{
     lower_alignment, lower_deserialization_rounding, lower_offset, lower_serialization_rounding,
 };
-use crate::ssa_ir::ir::{Operation, Region, Value};
-use crate::ssa_ir::ops::{
+use crate::ir::dag::{Operation, Region, Value};
+use crate::ir::ops::{
     EmptyBitFieldOp, ExecuteOp, IntoBitFieldOp, IntoRawBitsOp, MemberOp, PackBitFieldOp, RefOp, SelfOp, TryOp,
     UnpackBitFieldOp, YieldOp,
 };
@@ -111,7 +111,7 @@ mod tests {
             bit_field::BitField, bit_field_attribute::BitFieldAttribute, packed_field::PackedField,
             packed_field_attribute::PackedFieldAttribute,
         },
-        ssa_ir::ir::assert_matches,
+        ir::pattern_match::assert_matches,
     };
 
     fn make_empty() -> BitField {

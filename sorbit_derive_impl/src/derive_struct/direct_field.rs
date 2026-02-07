@@ -4,8 +4,8 @@ use crate::derive_struct::direct_field_attribute::DirectFieldAttribute;
 use crate::derive_struct::field_utils::{
     lower_alignment, lower_deserialization_rounding, lower_offset, lower_serialization_rounding,
 };
-use crate::ssa_ir::ir::{Operation, Region, Value};
-use crate::ssa_ir::ops::{ExecuteOp, MemberOp, SelfOp, YieldOp};
+use crate::ir::dag::{Operation, Region, Value};
+use crate::ir::ops::{ExecuteOp, MemberOp, SelfOp, YieldOp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DirectField {
@@ -59,7 +59,7 @@ impl DirectField {
 
 #[cfg(test)]
 mod tests {
-    use crate::ssa_ir::ir::assert_matches;
+    use crate::ir::pattern_match::assert_matches;
 
     use super::*;
 
