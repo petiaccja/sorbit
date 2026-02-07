@@ -1,9 +1,5 @@
 use crate::utility::{from_bytes, to_bytes};
-use sorbit::{
-    Deserialize, Serialize,
-    bit::Error as BitError,
-    error::{Error, SerializeError},
-};
+use sorbit::{Deserialize, Serialize, bit::Error as BitError, error::Error};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[sorbit_bit_field(_b, repr(u16))]
@@ -39,7 +35,7 @@ fn deserialize_packing() {
 #[test]
 fn serialize_packing_bit_overflow() {
     let faulty_value = Packing { a: 255, b: true };
-    assert_eq!(to_bytes(&faulty_value), Err(Error::from(BitError::TooManyBits).enclose("a")));
+    assert_eq!(to_bytes(&faulty_value), Err(Error::from(BitError::TooManyBits)));
 }
 
 #[test]
@@ -47,7 +43,7 @@ fn deserialize_packing_invalid_variant() {
     let faulty_bytes = 0b1000_0011_0011_0000_u16.to_be_bytes();
     // TODO: this is not quite right, it should return an InvalidVariant or
     // similar error as `2` does not qualify as either `true` or `false`.
-    assert_eq!(from_bytes::<Packing>(&faulty_bytes), Err(Error::from(BitError::TooManyBits).enclose("b")));
+    assert_eq!(from_bytes::<Packing>(&faulty_bytes), Err(Error::from(BitError::TooManyBits)));
 }
 
 #[test]
