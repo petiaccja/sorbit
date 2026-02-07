@@ -1,24 +1,8 @@
-use quote::format_ident;
-
 use crate::ir::dag::{Operation, Region, Value};
 use crate::ir::ops::{
     AlignOp, DeserializeCompositeOp, DeserializeObjectOp, MemberOp, OkOp, PadOp, SerializeCompositeOp,
     SerializeObjectOp, TryOp, YieldOp,
 };
-
-pub fn member_to_ident(member: &syn::Member) -> syn::Ident {
-    match member {
-        syn::Member::Named(ident) => ident.clone(),
-        syn::Member::Unnamed(index) => format_ident!("_{}", index),
-    }
-}
-
-pub fn member_to_string(member: &syn::Member) -> String {
-    match member {
-        syn::Member::Named(ident) => ident.to_string(),
-        syn::Member::Unnamed(index) => index.index.to_string(),
-    }
-}
 
 pub fn lower_offset(serializer: Value, offset: Option<u64>, serializing: bool, ops: &mut Vec<Operation>) {
     if let Some(offset) = offset {
