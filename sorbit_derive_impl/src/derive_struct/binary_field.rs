@@ -9,17 +9,17 @@ pub enum BinaryField {
 }
 
 impl BinaryField {
-    pub fn lower_se(&self, serializer: Value) -> Operation {
+    pub fn to_serialize_op(&self, serializer: Value) -> Operation {
         match self {
-            BinaryField::Direct(direct_field) => direct_field.lower_se(serializer),
-            BinaryField::Bit(bit_field) => bit_field.lower_se(serializer),
+            BinaryField::Direct(direct_field) => direct_field.to_serialize_op(serializer),
+            BinaryField::Bit(bit_field) => bit_field.to_serialize_op(serializer),
         }
     }
 
-    pub fn lower_de(&self, serializer: Value) -> Operation {
+    pub fn to_deserialize_op(&self, serializer: Value) -> Operation {
         match self {
-            BinaryField::Direct(direct_field) => direct_field.lower_de(serializer),
-            BinaryField::Bit(bit_field) => bit_field.lower_de(serializer),
+            BinaryField::Direct(direct_field) => direct_field.to_deserialize_op(serializer),
+            BinaryField::Bit(bit_field) => bit_field.to_deserialize_op(serializer),
         }
     }
 }

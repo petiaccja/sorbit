@@ -25,7 +25,7 @@ impl DirectField {
         Ok(Self { name, ty, attribute })
     }
 
-    pub fn lower_se(&self, serializer: Value) -> Operation {
+    pub fn to_serialize_op(&self, serializer: Value) -> Operation {
         ExecuteOp::new(Region::new(0, |_| {
             let mut ops = Vec::new();
 
@@ -44,7 +44,7 @@ impl DirectField {
         .operation
     }
 
-    pub fn lower_de(&self, deserializer: Value) -> Operation {
+    pub fn to_deserialize_op(&self, deserializer: Value) -> Operation {
         ExecuteOp::new(Region::new(0, |_| {
             let mut ops = Vec::new();
             lower_offset(deserializer.clone(), self.attribute.offset, false, &mut ops);
@@ -117,7 +117,7 @@ mod tests {
         let input =
             DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
         let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_se(serializer));
+        let op = format!("{:#?}", input.to_serialize_op(serializer));
         let pattern = "
         %out = execute || [
             %self = self
@@ -137,7 +137,7 @@ mod tests {
             attribute: DirectFieldAttribute { offset: Some(1), align: Some(2), round: Some(3) },
         };
         let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_se(serializer.clone()));
+        let op = format!("{:#?}", input.to_serialize_op(serializer.clone()));
         let pattern = "
         %out = execute || [
             %self = self
@@ -169,7 +169,7 @@ mod tests {
         let input =
             DirectField { name: parse_quote!(foo), ty: parse_quote!(i32), attribute: DirectFieldAttribute::default() };
         let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_de(deserializer));
+        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
         let pattern = "
         %out = execute || [
             %res = deserialize_object [i32] %serializer
@@ -187,7 +187,7 @@ mod tests {
             attribute: DirectFieldAttribute { offset: Some(1), align: Some(2), round: Some(3) },
         };
         let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_de(deserializer.clone()));
+        let op = format!("{:#?}", input.to_deserialize_op(deserializer.clone()));
         let pattern = "
         %out = execute || [
             %offset = pad [1] %deserializer
@@ -206,6 +206,6 @@ mod tests {
         ]
         ";
         assert_matches!(op, pattern);
-        println!("{}", input.lower_de(deserializer).to_token_stream())
+        println!("{}", input.to_deserialize_op(deserializer).to_token_stream())
     }
 }

@@ -82,7 +82,7 @@ impl Struct {
         Ok(Self { name, generics, attributes, fields })
     }
 
-    pub fn lower_se(&self) -> ImplSerializeOp {
+    pub fn to_serialize_op(&self) -> ImplSerializeOp {
         let body = Region::new(1, |arguments| {
             let serializer = &arguments[0];
             let maybe_composite = SerializeCompositeOp::new(
@@ -103,7 +103,7 @@ impl Struct {
                             .collect()
                     } else {
                         let maybe_spans: Vec<_> =
-                            self.fields.iter().map(|field| field.lower_se(serializer.clone())).collect();
+                            self.fields.iter().map(|field| field.to_serialize_op(serializer.clone())).collect();
                         let spans: Vec<_> =
                             maybe_spans.iter().map(|maybe_span| TryOp::new(maybe_span.output(0))).collect();
                         let span_tuple = TupleOp::new(spans.iter().map(|span| span.output()).collect());
@@ -135,7 +135,7 @@ impl Struct {
         ImplSerializeOp::new(self.name.clone(), self.generics.clone(), body)
     }
 
-    pub fn lower_de(&self) -> ImplDeserializeOp {
+    pub fn to_deserialize_op(&self) -> ImplDeserializeOp {
         let body = Region::new(1, |arguments| {
             let deserializer = &arguments[0];
             let maybe_composite = DeserializeCompositeOp::new(
@@ -148,7 +148,7 @@ impl Struct {
                     lower_alignment(deserializer.clone(), self.attributes.round, false, &mut layout_ops);
 
                     let maybe_des_ops: Vec<_> =
-                        self.fields.iter().map(|field| field.lower_de(deserializer.clone())).collect();
+                        self.fields.iter().map(|field| field.to_deserialize_op(deserializer.clone())).collect();
                     let mut des_ops = Vec::new();
                     let mut field_names = Vec::new();
                     let mut field_values = Vec::new();
@@ -330,7 +330,7 @@ mod tests {
             fields: vec![],
         };
 
-        let op = format!("{:#?}", input.lower_se().operation);
+        let op = format!("{:#?}", input.to_serialize_op().operation);
         let pattern = "
         impl_serialize |%serializer| [
             %maybe_composite = serialize_composite %serializer |%s_inner| [
@@ -355,7 +355,7 @@ mod tests {
             fields: vec![],
         };
 
-        let op = format!("{:#?}", input.lower_se().operation);
+        let op = format!("{:#?}", input.to_serialize_op().operation);
         let pattern = "
         impl_serialize |%serializer| [
             %maybe_composite = serialize_composite %serializer |%s_inner| [
@@ -395,7 +395,7 @@ mod tests {
             ],
         };
 
-        let op = format!("{:#?}", input.lower_se().operation);
+        let op = format!("{:#?}", input.to_serialize_op().operation);
         let pattern = "
         impl_serialize |%serializer| [
             %maybe_composite = serialize_composite %serializer |%s_inner| [
@@ -425,7 +425,7 @@ mod tests {
             yield %ok_span
         ]        
         ";
-        println!("{}", input.lower_se().operation.to_token_stream());
+        println!("{}", input.to_serialize_op().operation.to_token_stream());
         assert_matches!(op, pattern);
     }
 
@@ -445,7 +445,7 @@ mod tests {
             fields: vec![],
         };
 
-        let op = format!("{:#?}", input.lower_de().operation);
+        let op = format!("{:#?}", input.to_deserialize_op().operation);
         let pattern = "
         impl_deserialize |%deserializer| [
             %maybe_composite = deserialize_composite %deserializer |%de_inner| [
@@ -474,6 +474,6 @@ mod tests {
 
         let parsed = Struct::parse(&input).unwrap();
 
-        println!("{}", parsed.lower_de().operation.to_token_stream());
+        println!("{}", parsed.to_deserialize_op().operation.to_token_stream());
     }
 }

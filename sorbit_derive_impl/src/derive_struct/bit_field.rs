@@ -20,7 +20,7 @@ pub struct BitField {
 }
 
 impl BitField {
-    pub fn lower_se(&self, serializer: Value) -> Operation {
+    pub fn to_serialize_op(&self, serializer: Value) -> Operation {
         ExecuteOp::new(Region::new(0, |_| {
             let mut ops = Vec::new();
             let self_ = SelfOp::new();
@@ -59,7 +59,7 @@ impl BitField {
         .operation
     }
 
-    pub fn lower_de(&self, deserializer: Value) -> Operation {
+    pub fn to_deserialize_op(&self, deserializer: Value) -> Operation {
         ExecuteOp::new(Region::new(0, |_| {
             let mut ops = Vec::new();
 
@@ -145,7 +145,7 @@ mod tests {
     fn lower_se_empty() {
         let input = make_empty();
         let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_se(serializer));
+        let op = format!("{:#?}", input.to_serialize_op(serializer));
         let pattern = "
         %res = execute || [
         %self = self
@@ -163,7 +163,7 @@ mod tests {
     fn lower_se_two_members() {
         let input = make_two_members();
         let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_se(serializer));
+        let op = format!("{:#?}", input.to_serialize_op(serializer));
         let pattern = "
         %res = execute || [
             %self = self
@@ -191,7 +191,7 @@ mod tests {
     fn lower_de_empty() {
         let input = make_empty();
         let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_de(deserializer));
+        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
         let pattern = "
         execute || [
             %s = deserialize_object [u16] %deserializer
@@ -207,7 +207,7 @@ mod tests {
     fn lower_de_two_members() {
         let input = make_two_members();
         let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.lower_de(deserializer));
+        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
         let pattern = "
         %0, %1 = execute || [
             %s = deserialize_object [u16] %deserializer
