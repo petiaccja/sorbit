@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use proc_macro2::Span;
 use syn::{Attribute, Type, spanned::Spanned};
 
-use crate::shared::{
+use crate::parse_utils::{
     parse_bit_field_name, parse_literal_int_meta, parse_meta_list_attr, parse_type_meta, placeholder_type,
     sorbit_bit_field_path,
 };

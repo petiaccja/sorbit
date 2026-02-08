@@ -1,6 +1,6 @@
 use syn::{Attribute, spanned::Spanned};
 
-use crate::shared::{parse_literal_int_meta, parse_meta_list_attr, sorbit_bit_field_path, sorbit_layout_path};
+use crate::parse_utils::{parse_literal_int_meta, parse_meta_list_attr, sorbit_bit_field_path, sorbit_layout_path};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DirectFieldAttribute {

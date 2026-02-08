@@ -3,7 +3,7 @@ use std::ops::Range;
 use proc_macro2::Span;
 use syn::{Attribute, Ident, spanned::Spanned};
 
-use crate::shared::{
+use crate::parse_utils::{
     parse_bit_field_name, parse_literal_range_meta, parse_meta_list_attr, sorbit_bit_field_path, sorbit_layout_path,
 };
 

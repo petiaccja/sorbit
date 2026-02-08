@@ -1,5 +1,5 @@
 use crate::derive_struct::{direct_field::DirectField, packed_field::PackedField};
-use crate::shared::sorbit_bit_field_path;
+use crate::parse_utils::sorbit_bit_field_path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceField {
