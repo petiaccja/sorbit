@@ -9,6 +9,19 @@ use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, TypePath};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ByteOrder {
+    BigEndian,
+    LittleEndian,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BitNumbering {
+    MSB0,
+    #[default]
+    LSB0,
+}
+
 pub mod path {
     use syn::Path;
     use syn::parse_quote;
@@ -43,6 +56,14 @@ pub mod path {
 
     pub fn len() -> Path {
         parse_quote!(len)
+    }
+
+    pub fn byte_order() -> Path {
+        parse_quote!(byte_order)
+    }
+
+    pub fn bit_numbering() -> Path {
+        parse_quote!(bit_numbering)
     }
 }
 
@@ -132,5 +153,35 @@ where
             Ok(start..end)
         }
         _ => return Err(syn::Error::new(expr.span(), "expected a bounded literal integer range (e.g. 1..4, 1..=3")),
+    }
+}
+
+pub fn as_byte_order(expr: &Expr) -> Result<ByteOrder, syn::Error> {
+    let ident = as_ident(expr)?;
+    match ident.to_string().as_str() {
+        "big_endian" => Ok(ByteOrder::BigEndian),
+        "little_endian" => Ok(ByteOrder::LittleEndian),
+        _ => Err(syn::Error::new(expr.span(), "byte order may be `big_endian`, `little_endian`, or `inherited`")),
+    }
+}
+
+pub fn as_bit_numbering(expr: &Expr) -> Result<BitNumbering, syn::Error> {
+    let ident = as_ident(expr)?;
+    match ident.to_string().to_uppercase().as_str() {
+        "MSB0" => Ok(BitNumbering::MSB0),
+        "LSB0" => Ok(BitNumbering::LSB0),
+        _ => Err(syn::Error::new(expr.span(), "bit numbering may be `MSB0` or `LSB0`")),
+    }
+}
+
+impl std::fmt::Display for ByteOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::fmt::Display for BitNumbering {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
     }
 }

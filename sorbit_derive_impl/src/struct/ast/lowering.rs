@@ -1,7 +1,8 @@
+use crate::attribute::ByteOrder;
 use crate::ir::dag::{Operation, Region, Value};
 use crate::ir::ops::{
-    AlignOp, DeserializeCompositeOp, DeserializeObjectOp, MemberOp, OkOp, PadOp, SerializeCompositeOp,
-    SerializeObjectOp, TryOp, YieldOp,
+    AlignOp, DeserializeByteOrderOp, DeserializeCompositeOp, DeserializeObjectOp, MemberOp, OkOp, PadOp,
+    SerializeByteOrderOp, SerializeCompositeOp, SerializeObjectOp, TryOp, YieldOp,
 };
 
 pub trait ToSerializeOp {
@@ -33,6 +34,7 @@ pub fn lower_alignment(serializer: Value, align: Option<u64>, serializing: bool,
 pub fn lower_serialization_rounding(
     serializer: Value,
     object: Value,
+    byte_order: Option<ByteOrder>,
     round: Option<u64>,
     ops: &mut Vec<Operation>,
 ) -> Value {
@@ -41,12 +43,12 @@ pub fn lower_serialization_rounding(
             serializer,
             Region::new(1, |arguments| {
                 let serializer = &arguments[0];
-                let serialize = SerializeObjectOp::new(serializer.clone(), object);
+                let serialize = lower_serialization_byte_order(serializer.clone(), object, byte_order);
                 let round = AlignOp::new(serializer.clone(), round, true);
                 let try_round = TryOp::new(round.output());
-                let yield_ = YieldOp::new(vec![serialize.output()]);
+                let yield_ = YieldOp::new(vec![serialize.output(0)]);
                 vec![
-                    serialize.operation,
+                    serialize,
                     round.operation,
                     try_round.operation,
                     yield_.operation,
@@ -68,9 +70,9 @@ pub fn lower_serialization_rounding(
         );
         output
     } else {
-        let serialize = SerializeObjectOp::new(serializer, object);
-        let output = serialize.output();
-        ops.extend([serialize.operation].into_iter());
+        let serialize = lower_serialization_byte_order(serializer, object, byte_order);
+        let output = serialize.output(0);
+        ops.extend([serialize].into_iter());
         output
     }
 }
@@ -78,6 +80,7 @@ pub fn lower_serialization_rounding(
 pub fn lower_deserialization_rounding(
     deserializer: Value,
     ty: syn::Type,
+    byte_order: Option<ByteOrder>,
     round: Option<u64>,
     ops: &mut Vec<Operation>,
 ) -> Value {
@@ -86,25 +89,64 @@ pub fn lower_deserialization_rounding(
             deserializer,
             Region::new(1, |arguments| {
                 let deserializer = &arguments[0];
-                let deserialize = DeserializeObjectOp::new(deserializer.clone(), ty);
+                let deserialize = lower_deserialization_byte_order(deserializer.clone(), ty, byte_order);
                 let round = AlignOp::new(deserializer.clone(), round, false);
                 let try_round = TryOp::new(round.output());
-                let yield_ = YieldOp::new(vec![deserialize.output()]);
+                let yield_ = YieldOp::new(vec![deserialize.output(0)]);
                 vec![
-                    deserialize.operation,
+                    deserialize,
                     round.operation,
                     try_round.operation,
                     yield_.operation,
                 ]
             }),
         );
-        let output = deserialize.output();
+        let output = deserialize.output(0);
         ops.extend([deserialize.operation].into_iter());
         output
     } else {
-        let deserialize = DeserializeObjectOp::new(deserializer, ty);
-        let output = deserialize.output();
-        ops.extend([deserialize.operation].into_iter());
+        let deserialize = lower_deserialization_byte_order(deserializer, ty, byte_order);
+        let output = deserialize.output(0);
+        ops.extend([deserialize].into_iter());
         output
+    }
+}
+
+pub fn lower_serialization_byte_order(serializer: Value, object: Value, byte_order: Option<ByteOrder>) -> Operation {
+    if let Some(byte_order) = byte_order {
+        SerializeByteOrderOp::new(
+            serializer,
+            byte_order,
+            Region::new(1, |args| {
+                let serializer = args[0].clone();
+                let result = SerializeObjectOp::new(serializer.clone(), object);
+                let yield_ = YieldOp::new(vec![result.output()]);
+                vec![result.operation, yield_.operation]
+            }),
+        )
+        .operation
+    } else {
+        SerializeObjectOp::new(serializer.clone(), object).operation
+    }
+}
+pub fn lower_deserialization_byte_order(
+    deserializer: Value,
+    ty: syn::Type,
+    byte_order: Option<ByteOrder>,
+) -> Operation {
+    if let Some(byte_order) = byte_order {
+        DeserializeByteOrderOp::new(
+            deserializer,
+            byte_order,
+            Region::new(1, |args| {
+                let deserializer = args[0].clone();
+                let result = DeserializeObjectOp::new(deserializer.clone(), ty);
+                let yield_ = YieldOp::new(vec![result.output()]);
+                vec![result.operation, yield_.operation]
+            }),
+        )
+        .operation
+    } else {
+        DeserializeObjectOp::new(deserializer.clone(), ty).operation
     }
 }

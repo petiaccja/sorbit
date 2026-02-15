@@ -110,13 +110,22 @@ impl ToDeserializeOp for Struct {
                     let mut field_values = Vec::new();
                     for (field, maybe_des_op) in self.fields.iter().zip(maybe_des_ops.iter()) {
                         match field {
-                            Field::Direct { member, ty: _, offset: _, align: _, round: _ } => {
+                            Field::Direct { member, ty: _, byte_order: _, offset: _, align: _, round: _ } => {
                                 let des_op = TryOp::new(maybe_des_op.output(0));
                                 field_names.push(member.clone());
                                 field_values.push(des_op.output());
                                 des_ops.extend([des_op.operation].into_iter());
                             }
-                            Field::Bit { ident: _, ty: _, offset: _, align: _, round: _, members } => {
+                            Field::Bit {
+                                ident: _,
+                                ty: _,
+                                byte_order: _,
+                                bit_numbering: _,
+                                offset: _,
+                                align: _,
+                                round: _,
+                                members,
+                            } => {
                                 for (idx, member) in members.iter().enumerate() {
                                     let des_op = TryOp::new(maybe_des_op.output(idx));
                                     field_names.push(member.member.clone());
@@ -143,7 +152,7 @@ impl ToDeserializeOp for Struct {
                 }),
             );
 
-            let yield_ = YieldOp::new(vec![maybe_composite.output()]);
+            let yield_ = YieldOp::new(vec![maybe_composite.output(0)]);
             vec![maybe_composite.operation, yield_.operation]
         });
         ImplDeserializeOp::new(self.ident.clone(), self.generics.clone(), body).operation
@@ -227,6 +236,7 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
+                    byte_order: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -234,6 +244,7 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(bar),
                     ty: parse_quote!(i8),
+                    byte_order: None,
                     offset: None,
                     align: None,
                     round: None,

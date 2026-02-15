@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use crate::attribute::{BitNumbering, ByteOrder};
+
 use super::constants::*;
 use proc_macro2::TokenStream;
 use quote::{ToTokens as _, quote};
@@ -569,6 +571,49 @@ impl SerializeCompositeOp {
 }
 
 //------------------------------------------------------------------------------
+// SerializeByteOrderOp
+//------------------------------------------------------------------------------
+
+pub struct SerializeByteOrderOp {
+    pub operation: Operation,
+}
+
+impl SerializeByteOrderOp {
+    pub fn new(serializer: Value, byte_order: ByteOrder, body: Region) -> Self {
+        Self {
+            operation: Operation::new(
+                "with_byte_order".into(),
+                vec![byte_order.to_string()],
+                Box::new(move |op| Self::to_token_stream(op, byte_order)),
+                body.num_outputs(),
+                vec![serializer],
+                vec![body],
+            ),
+        }
+    }
+
+    #[allow(unused)]
+    pub fn output(&self, index: usize) -> Value {
+        self.operation.output(index)
+    }
+
+    pub fn to_token_stream(operation: &Operation, byte_order: ByteOrder) -> TokenStream {
+        use ByteOrder::*;
+        let se = operation.inputs[0].to_ident();
+        let body = &operation.regions[0];
+        let se_inner = body.argument(0).to_ident();
+        match byte_order {
+            BigEndian => {
+                quote! { #SERIALIZER_TRAIT::with_byte_order(#se, #BIG_ENDIAN, |#se_inner| { #body }) }
+            }
+            LittleEndian => {
+                quote! { #SERIALIZER_TRAIT::with_byte_order(#se, #LITTLE_ENDIAN, |#se_inner| { #body }) }
+            }
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
 // DeserializeObjectOp
 //------------------------------------------------------------------------------
 
@@ -615,15 +660,15 @@ impl DeserializeCompositeOp {
                 "deserialize_composite".into(),
                 vec![],
                 Box::new(Self::to_token_stream),
-                1,
+                body.num_outputs(),
                 vec![deserializer],
                 vec![body],
             ),
         }
     }
 
-    pub fn output(&self) -> Value {
-        self.operation.output(0)
+    pub fn output(&self, index: usize) -> Value {
+        self.operation.output(index)
     }
 
     pub fn to_token_stream(operation: &Operation) -> TokenStream {
@@ -634,6 +679,49 @@ impl DeserializeCompositeOp {
             #DESERIALIZER_TRAIT::deserialize_composite(#deserializer, |#inner_deserializer| {
                 #body
             })
+        }
+    }
+}
+
+//------------------------------------------------------------------------------
+// DeserializeByteOrderOp
+//------------------------------------------------------------------------------
+
+pub struct DeserializeByteOrderOp {
+    pub operation: Operation,
+}
+
+impl DeserializeByteOrderOp {
+    pub fn new(deserializer: Value, byte_order: ByteOrder, body: Region) -> Self {
+        Self {
+            operation: Operation::new(
+                "with_byte_order".into(),
+                vec![byte_order.to_string()],
+                Box::new(move |op| Self::to_token_stream(op, byte_order)),
+                body.num_outputs(),
+                vec![deserializer],
+                vec![body],
+            ),
+        }
+    }
+
+    #[allow(unused)]
+    pub fn output(&self, index: usize) -> Value {
+        self.operation.output(index)
+    }
+
+    pub fn to_token_stream(operation: &Operation, byte_order: ByteOrder) -> TokenStream {
+        use ByteOrder::*;
+        let de = operation.inputs[0].to_ident();
+        let body = &operation.regions[0];
+        let de_inner = body.argument(0).to_ident();
+        match byte_order {
+            BigEndian => {
+                quote! { #DESERIALIZER_TRAIT::with_byte_order(#de, #BIG_ENDIAN, |#de_inner| { #body }) }
+            }
+            LittleEndian => {
+                quote! { #DESERIALIZER_TRAIT::with_byte_order(#de, #LITTLE_ENDIAN, |#de_inner| { #body }) }
+            }
         }
     }
 }
@@ -743,12 +831,21 @@ pub struct PackBitFieldOp {
 }
 
 impl PackBitFieldOp {
-    pub fn new(serializer: Value, value: Value, bit_field: Value, bits: Range<u8>) -> Self {
+    pub fn new(
+        serializer: Value,
+        value: Value,
+        bit_field: Value,
+        bits: Range<u8>,
+        bit_numbering: BitNumbering,
+    ) -> Self {
         Self {
             operation: Operation::new(
                 "pack_bit_field".into(),
-                vec![format!("{}..{}", bits.start, bits.end)],
-                Box::new(move |op| Self::to_token_stream(op, &bits)),
+                vec![
+                    format!("{}..{}", bits.start, bits.end),
+                    bit_numbering.to_string(),
+                ],
+                Box::new(move |op| Self::to_token_stream(op, &bits, bit_numbering)),
                 1,
                 vec![serializer, value, bit_field],
                 vec![],
@@ -760,7 +857,7 @@ impl PackBitFieldOp {
         self.operation.output(0)
     }
 
-    pub fn to_token_stream(operation: &Operation, bits: &Range<u8>) -> TokenStream {
+    pub fn to_token_stream(operation: &Operation, bits: &Range<u8>, bit_numbering: BitNumbering) -> TokenStream {
         let serializer = &operation.inputs[0];
         let value = &operation.inputs[1];
         let bit_field = &operation.inputs[2];
@@ -785,15 +882,16 @@ pub struct UnpackBitFieldOp {
 }
 
 impl UnpackBitFieldOp {
-    pub fn new(ty: syn::Type, bit_field: Value, bits: Range<u8>) -> Self {
+    pub fn new(ty: syn::Type, bit_field: Value, bits: Range<u8>, bit_numbering: BitNumbering) -> Self {
         Self {
             operation: Operation::new(
                 "unpack_bit_field".into(),
                 vec![
                     ty.to_token_stream().to_string(),
                     format!("{}..{}", bits.start, bits.end),
+                    bit_numbering.to_string(),
                 ],
-                Box::new(move |op| Self::to_token_stream(op, &ty, &bits)),
+                Box::new(move |op| Self::to_token_stream(op, &ty, &bits, bit_numbering)),
                 1,
                 vec![bit_field],
                 vec![],
@@ -805,7 +903,12 @@ impl UnpackBitFieldOp {
         self.operation.output(0)
     }
 
-    pub fn to_token_stream(operation: &Operation, ty: &syn::Type, bits: &Range<u8>) -> TokenStream {
+    pub fn to_token_stream(
+        operation: &Operation,
+        ty: &syn::Type,
+        bits: &Range<u8>,
+        bit_numbering: BitNumbering,
+    ) -> TokenStream {
         let bit_field = &operation.inputs[0];
         let Range { start, end } = bits;
         quote! {

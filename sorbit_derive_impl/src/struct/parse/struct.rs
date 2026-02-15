@@ -3,12 +3,13 @@ use std::collections::HashSet;
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use super::field::Field;
-use crate::attribute::{as_literal_int, parse_nvp_attribute_group, path};
+use crate::attribute::{ByteOrder, as_byte_order, as_literal_int, parse_nvp_attribute_group, path};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
     pub ident: Ident,
     pub generics: Generics,
+    pub byte_order: Option<ByteOrder>,
     pub len: Option<u64>,
     pub round: Option<u64>,
     pub fields: Vec<Field>,
@@ -22,13 +23,15 @@ impl TryFrom<DeriveInput> for Struct {
                 let sorbit_attrs = value.attrs.iter().filter(|attr| attr.path() == &path::sorbit_attribute());
                 let parameters = parse_nvp_attribute_group(sorbit_attrs)?;
 
-                let accepted_parameters: HashSet<_> = [path::len(), path::round()].into_iter().collect();
+                let accepted_parameters: HashSet<_> =
+                    [path::byte_order(), path::len(), path::round()].into_iter().collect();
                 for (name, _) in &parameters {
                     if !accepted_parameters.contains(&name) {
-                        return Err(syn::Error::new(name.span(), "invalid parameter"));
+                        return Err(syn::Error::new(name.span(), "unrecognized parameter"));
                     }
                 }
 
+                let byte_order = parameters.get(&path::byte_order()).map(|expr| as_byte_order(expr)).transpose()?;
                 let len = parameters.get(&path::len()).map(|expr| as_literal_int(expr)).transpose()?;
                 let round = parameters.get(&path::round()).map(|expr| as_literal_int(expr)).transpose()?;
                 let fields = data_struct
@@ -37,7 +40,7 @@ impl TryFrom<DeriveInput> for Struct {
                     .map(|field| Field::try_from(field))
                     .collect::<Result<Vec<_>, _>>()?;
 
-                Ok(Self { ident: value.ident, generics: value.generics, len, round, fields })
+                Ok(Self { ident: value.ident, generics: value.generics, byte_order, len, round, fields })
             }
             syn::Data::Enum(_) => Err(syn::Error::new(value.span(), "expected a struct, got an enum")),
             syn::Data::Union(_) => Err(syn::Error::new(value.span(), "expected a struct, got a union")),
@@ -60,6 +63,7 @@ mod tests {
         let expected = Struct {
             ident: parse_quote!(Struct),
             generics: Generics::default(),
+            byte_order: None,
             len: None,
             round: None,
             fields: vec![],
@@ -77,6 +81,7 @@ mod tests {
         let expected = Struct {
             ident: parse_quote!(Struct),
             generics: Generics::default(),
+            byte_order: None,
             len: Some(1),
             round: Some(2),
             fields: vec![],
@@ -95,6 +100,7 @@ mod tests {
         let expected = Struct {
             ident: parse_quote!(Struct),
             generics: Generics::default(),
+            byte_order: None,
             len: Some(1),
             round: Some(2),
             fields: vec![],
@@ -112,6 +118,7 @@ mod tests {
         let expected = Struct {
             ident: parse_quote!(Struct),
             generics: Generics::default(),
+            byte_order: None,
             len: None,
             round: None,
             fields: vec![],
@@ -130,11 +137,13 @@ mod tests {
         let expected = Struct {
             ident: parse_quote!(Struct),
             generics: Generics::default(),
+            byte_order: None,
             len: None,
             round: None,
             fields: vec![Field::Direct {
                 ident: parse_quote!(field),
                 ty: parse_quote!(u8),
+                byte_order: None,
                 offset: None,
                 align: None,
                 round: None,

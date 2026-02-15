@@ -5,6 +5,7 @@ use proc_macro2::Span;
 use syn::spanned::Spanned;
 use syn::{Ident, Index, Member, Type};
 
+use crate::attribute::{BitNumbering, ByteOrder};
 use crate::r#struct::ast::field::BitFieldMember;
 
 use super::super::parse;
@@ -15,23 +16,54 @@ pub fn group_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Vec<Fi
     let mut field_group_ids = HashSet::new();
     for (index, field) in fields.enumerate() {
         match field {
-            parse::Field::Direct { ident, ty, offset, align, round } => {
+            parse::Field::Direct { ident, ty, byte_order, offset, align, round } => {
                 let member = ident
                     .map(|ident| Member::from(ident))
                     .unwrap_or(Member::Unnamed(Index { index: index as u32, span: ty.span() }));
-                field_groups.push(FieldGroup::Direct { member, ty, offset, align, round });
+                field_groups.push(FieldGroup::Direct { member, ty, byte_order, offset, align, round });
             }
-            parse::Field::Bit { ident, ty, storage_id, storage_ty, bits, offset, align, round } => {
+            parse::Field::Bit {
+                ident,
+                ty,
+                bits,
+                storage_id,
+                storage_ty,
+                byte_order,
+                bit_numbering,
+                offset,
+                align,
+                round,
+            } => {
                 let member = ident
                     .map(|ident| Member::from(ident))
                     .unwrap_or(Member::Unnamed(Index { index: index as u32, span: ty.span() }));
                 match field_groups.last_mut() {
                     Some(FieldGroup::Bit { ident, items }) if *ident == storage_id => {
-                        let item = FieldGroupBitItem { member, member_ty: ty, bits, storage_ty, offset, align, round };
+                        let item = FieldGroupBitItem {
+                            member,
+                            member_ty: ty,
+                            bits,
+                            byte_order,
+                            bit_numbering,
+                            storage_ty,
+                            offset,
+                            align,
+                            round,
+                        };
                         items.push(item);
                     }
                     _ => {
-                        let item = FieldGroupBitItem { member, member_ty: ty, bits, storage_ty, offset, align, round };
+                        let item = FieldGroupBitItem {
+                            member,
+                            member_ty: ty,
+                            bits,
+                            byte_order,
+                            bit_numbering,
+                            storage_ty,
+                            offset,
+                            align,
+                            round,
+                        };
                         if field_group_ids.insert(storage_id.clone()) {
                             field_groups.push(FieldGroup::Bit { ident: storage_id, items: vec![item] });
                         } else {
@@ -50,8 +82,18 @@ pub fn group_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Vec<Fi
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldGroup {
-    Direct { member: Member, ty: Type, offset: Option<u64>, align: Option<u64>, round: Option<u64> },
-    Bit { ident: Ident, items: Vec<FieldGroupBitItem> },
+    Direct {
+        member: Member,
+        ty: Type,
+        byte_order: Option<ByteOrder>,
+        offset: Option<u64>,
+        align: Option<u64>,
+        round: Option<u64>,
+    },
+    Bit {
+        ident: Ident,
+        items: Vec<FieldGroupBitItem>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,6 +102,8 @@ pub struct FieldGroupBitItem {
     member_ty: Type,
     bits: Range<u8>,
     storage_ty: Option<Type>,
+    byte_order: Option<ByteOrder>,
+    bit_numbering: BitNumbering,
     offset: Option<u64>,
     align: Option<u64>,
     round: Option<u64>,
@@ -68,64 +112,71 @@ pub struct FieldGroupBitItem {
 impl FieldGroup {
     pub fn into_field(self) -> Result<Field, syn::Error> {
         match self {
-            FieldGroup::Direct { member, ty, offset, align, round } => {
-                Ok(Field::Direct { member, ty, offset, align, round })
+            FieldGroup::Direct { member, ty, byte_order, offset, align, round } => {
+                Ok(Field::Direct { member, ty, byte_order, offset, align, round })
             }
-            FieldGroup::Bit { ident, mut items } => {
-                let ty = Self::find_storage_ty(items.iter_mut(), ident.span())?;
-                let offset = Self::find_offset(items.iter_mut())?;
-                let align = Self::find_align(items.iter_mut())?;
-                let round = Self::find_round(items.iter_mut())?;
+            FieldGroup::Bit { ident, items } => {
+                let ty = Self::find_storage_ty(items.iter(), ident.span())?;
+                let byte_order = Self::find_byte_order(items.iter())?;
+                let bit_numbering = Self::find_bit_numbering(items.iter())?;
+                let offset = Self::find_offset(items.iter())?;
+                let align = Self::find_align(items.iter())?;
+                let round = Self::find_round(items.iter())?;
                 let members = items
                     .into_iter()
                     .map(|item| BitFieldMember { member: item.member, ty: item.member_ty, bits: item.bits })
                     .collect();
-                Ok(Field::Bit { ident, ty, offset, align, round, members })
+                Ok(Field::Bit { ident, ty, byte_order, bit_numbering, offset, align, round, members })
             }
         }
     }
 
-    fn find_storage_ty<'a>(
-        items: impl Iterator<Item = &'a mut FieldGroupBitItem>,
-        span: Span,
-    ) -> Result<Type, syn::Error> {
-        let mut iter = items.map(|item| &mut item.storage_ty).filter(|storage_ty| storage_ty.is_some());
-        let storage_ty = iter.next().ok_or(syn::Error::new(span, "storage type of bit field not specified"))?;
-        if let Some(Some(redefinition)) = iter.next() {
-            Err(syn::Error::new(redefinition.span(), "storage type of bit field redefined"))
-        } else {
-            Ok(storage_ty.take().expect("filter ensures not None"))
-        }
+    fn find_storage_ty<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>, span: Span) -> Result<Type, syn::Error> {
+        let iter = items.filter_map(|item| item.storage_ty.as_ref().map(|ty| (ty, ty.span())));
+        let ty = all_same_or_error(iter, "the storage type of the bit field is redefined with a different value")?;
+        ty.cloned().ok_or(syn::Error::new(span, "the storage type of the bit field is not specified"))
     }
 
-    fn find_offset<'a>(items: impl Iterator<Item = &'a mut FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
-        let mut iter = items.filter_map(|item| item.offset.map(|offset| (offset, item.member.span())));
-        let first = iter.next();
-        if let Some((_, span)) = iter.next() {
-            Err(syn::Error::new(span, "offset of bit field redefined"))
-        } else {
-            Ok(first.map(|(offset, _)| offset))
-        }
+    fn find_byte_order<'a>(
+        items: impl Iterator<Item = &'a FieldGroupBitItem>,
+    ) -> Result<Option<ByteOrder>, syn::Error> {
+        let iter = items.filter_map(|item| item.byte_order.map(|byte_order| (byte_order, item.member.span())));
+        all_same_or_error(iter, "the byte order of the bit field is redefined with a different value")
     }
 
-    fn find_align<'a>(items: impl Iterator<Item = &'a mut FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
-        let mut iter = items.filter_map(|item| item.align.map(|align| (align, item.member.span())));
-        let first = iter.next();
-        if let Some((_, span)) = iter.next() {
-            Err(syn::Error::new(span, "alignment of bit field redefined"))
-        } else {
-            Ok(first.map(|(align, _)| align))
-        }
+    fn find_bit_numbering<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<BitNumbering, syn::Error> {
+        let iter = items.map(|item| (item.bit_numbering, item.member.span()));
+        all_same_or_error(iter, "the bit numbering of the bit field is redefined with a different value")
+            .map(|o| o.unwrap_or_default())
     }
 
-    fn find_round<'a>(items: impl Iterator<Item = &'a mut FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
-        let mut iter = items.filter_map(|item| item.round.map(|round| (round, item.member.span())));
-        let first = iter.next();
-        if let Some((_, span)) = iter.next() {
-            Err(syn::Error::new(span, "rounding of bit field redefined"))
-        } else {
-            Ok(first.map(|(round, _)| round))
-        }
+    fn find_offset<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
+        let iter = items.filter_map(|item| item.offset.map(|offset| (offset, item.member.span())));
+        all_same_or_error(iter, "the offset of the bit field is redefined with a different value")
+    }
+
+    fn find_align<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
+        let iter = items.filter_map(|item| item.align.map(|align| (align, item.member.span())));
+        all_same_or_error(iter, "alignment of the bit field is redefined with a different value")
+    }
+
+    fn find_round<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
+        let iter = items.filter_map(|item| item.round.map(|round| (round, item.member.span())));
+        all_same_or_error(iter, "rounding of the bit field is redefined with a different value")
+    }
+}
+
+fn all_same_or_error<T: PartialEq>(
+    mut iter: impl Iterator<Item = (T, Span)>,
+    message: &str,
+) -> Result<Option<T>, syn::Error> {
+    let Some((value, _)) = iter.next() else {
+        return Ok(None);
+    };
+    if let Some((_, span)) = iter.find(|(maybe_different, _)| *maybe_different != value) {
+        Err(syn::Error::new(span, message))
+    } else {
+        Ok(Some(value))
     }
 }
 
@@ -144,6 +195,7 @@ mod tests {
                 parse::Field::Direct {
                     ident: Some(parse_quote!(foo)),
                     ty: parse_quote!(u8),
+                    byte_order: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -151,20 +203,30 @@ mod tests {
                 parse::Field::Bit {
                     ident: parse_quote!(bar),
                     ty: parse_quote!(f32),
+                    bits: 0..4,
                     storage_id: parse_quote!(_bit_field),
                     storage_ty: None,
-                    bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
                 },
-                parse::Field::Direct { ident: None, ty: parse_quote!(u32), offset: None, align: None, round: None },
+                parse::Field::Direct {
+                    ident: None,
+                    ty: parse_quote!(u32),
+                    byte_order: None,
+                    offset: None,
+                    align: None,
+                    round: None,
+                },
             ];
             let actual = group_fields(fields.into_iter()).unwrap();
             let expected = [
                 FieldGroup::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
+                    byte_order: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -176,6 +238,8 @@ mod tests {
                         member_ty: parse_quote!(f32),
                         bits: 0..4,
                         storage_ty: None,
+                        byte_order: None,
+                        bit_numbering: BitNumbering::LSB0,
                         offset: None,
                         align: None,
                         round: None,
@@ -184,6 +248,7 @@ mod tests {
                 FieldGroup::Direct {
                     member: parse_quote!(2),
                     ty: parse_quote!(u32),
+                    byte_order: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -201,6 +266,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_1),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -211,6 +278,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_1),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -221,6 +290,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_2),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -236,6 +307,8 @@ mod tests {
                             member_ty: parse_quote!(f32),
                             bits: 0..4,
                             storage_ty: None,
+                            byte_order: None,
+                            bit_numbering: BitNumbering::LSB0,
                             offset: None,
                             align: None,
                             round: None,
@@ -245,6 +318,8 @@ mod tests {
                             member_ty: parse_quote!(f32),
                             bits: 0..4,
                             storage_ty: None,
+                            byte_order: None,
+                            bit_numbering: BitNumbering::LSB0,
                             offset: None,
                             align: None,
                             round: None,
@@ -258,6 +333,8 @@ mod tests {
                         member_ty: parse_quote!(f32),
                         bits: 0..4,
                         storage_ty: None,
+                        byte_order: None,
+                        bit_numbering: BitNumbering::LSB0,
                         offset: None,
                         align: None,
                         round: None,
@@ -277,6 +354,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_1),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -287,6 +366,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_2),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -297,6 +378,8 @@ mod tests {
                     storage_id: parse_quote!(_bit_field_1),
                     storage_ty: None,
                     bits: 0..4,
+                    byte_order: None,
+                    bit_numbering: BitNumbering::LSB0,
                     offset: None,
                     align: None,
                     round: None,
@@ -317,6 +400,8 @@ mod tests {
                 member_ty: parse_quote!(f32),
                 bits: 0..4,
                 storage_ty: None,
+                byte_order: None,
+                bit_numbering: BitNumbering::LSB0,
                 offset: None,
                 align: None,
                 round: None,
@@ -325,86 +410,87 @@ mod tests {
 
         #[test]
         fn find_storage_ty_none() {
-            let mut items = make_items();
-            assert!(FieldGroup::find_storage_ty(items.iter_mut(), Span::call_site()).is_err());
+            let items = make_items();
+            assert!(FieldGroup::find_storage_ty(items.iter(), Span::call_site()).is_err());
         }
 
         #[test]
         fn find_storage_ty_unique() {
             let mut items = make_items();
             items[1].storage_ty = Some(parse_quote!(u32));
-            assert_eq!(FieldGroup::find_storage_ty(items.iter_mut(), Span::call_site()).unwrap(), parse_quote!(u32));
+            items[2].storage_ty = Some(parse_quote!(u32));
+            assert_eq!(FieldGroup::find_storage_ty(items.iter(), Span::call_site()).unwrap(), parse_quote!(u32));
         }
 
         #[test]
         fn find_storage_ty_ambiguous() {
             let mut items = make_items();
             items[0].storage_ty = Some(parse_quote!(u32));
-            items[2].storage_ty = Some(parse_quote!(u32));
-            assert!(FieldGroup::find_storage_ty(items.iter_mut(), Span::call_site()).is_err());
+            items[2].storage_ty = Some(parse_quote!(u16));
+            assert!(FieldGroup::find_storage_ty(items.iter(), Span::call_site()).is_err());
         }
 
         #[test]
         fn find_offset_none() {
-            let mut items = make_items();
-            assert_eq!(FieldGroup::find_offset(items.iter_mut()).unwrap(), None);
+            let items = make_items();
+            assert_eq!(FieldGroup::find_offset(items.iter()).unwrap(), None);
         }
 
         #[test]
         fn find_offset_unique() {
             let mut items = make_items();
             items[1].offset = Some(1);
-            assert_eq!(FieldGroup::find_offset(items.iter_mut()).unwrap(), Some(1));
+            assert_eq!(FieldGroup::find_offset(items.iter()).unwrap(), Some(1));
         }
 
         #[test]
         fn find_offset_ambiguous() {
             let mut items = make_items();
             items[0].offset = Some(1);
-            items[2].offset = Some(1);
-            assert!(FieldGroup::find_offset(items.iter_mut()).is_err());
+            items[2].offset = Some(2);
+            assert!(FieldGroup::find_offset(items.iter()).is_err());
         }
 
         #[test]
         fn find_align_none() {
-            let mut items = make_items();
-            assert_eq!(FieldGroup::find_align(items.iter_mut()).unwrap(), None);
+            let items = make_items();
+            assert_eq!(FieldGroup::find_align(items.iter()).unwrap(), None);
         }
 
         #[test]
         fn find_align_unique() {
             let mut items = make_items();
             items[1].align = Some(1);
-            assert_eq!(FieldGroup::find_align(items.iter_mut()).unwrap(), Some(1));
+            assert_eq!(FieldGroup::find_align(items.iter()).unwrap(), Some(1));
         }
 
         #[test]
         fn find_align_ambiguous() {
             let mut items = make_items();
             items[0].align = Some(1);
-            items[2].align = Some(1);
-            assert!(FieldGroup::find_align(items.iter_mut()).is_err());
+            items[2].align = Some(2);
+            assert!(FieldGroup::find_align(items.iter()).is_err());
         }
 
         #[test]
         fn find_round_none() {
-            let mut items = make_items();
-            assert_eq!(FieldGroup::find_round(items.iter_mut()).unwrap(), None);
+            let items = make_items();
+            assert_eq!(FieldGroup::find_round(items.iter()).unwrap(), None);
         }
 
         #[test]
         fn find_round_unique() {
             let mut items = make_items();
             items[1].round = Some(1);
-            assert_eq!(FieldGroup::find_round(items.iter_mut()).unwrap(), Some(1));
+            assert_eq!(FieldGroup::find_round(items.iter()).unwrap(), Some(1));
         }
 
         #[test]
         fn find_round_ambiguous() {
             let mut items = make_items();
             items[0].round = Some(1);
-            items[2].round = Some(1);
-            assert!(FieldGroup::find_round(items.iter_mut()).is_err());
+            items[2].round = Some(2);
+            assert!(FieldGroup::find_round(items.iter()).is_err());
         }
     }
 }

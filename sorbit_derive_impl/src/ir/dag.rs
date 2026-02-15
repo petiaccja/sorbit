@@ -26,8 +26,17 @@ impl Region {
         Self { arguments, operations }
     }
 
+    #[allow(unused)]
     pub fn operations(&self) -> &[Operation] {
         &self.operations
+    }
+
+    pub fn num_outputs(&self) -> usize {
+        if let Some(last_op) = self.operations.last() {
+            if last_op.mnemonic() == "yield" { last_op.inputs.len() } else { 0 }
+        } else {
+            0
+        }
     }
 
     pub fn argument(&self, index: usize) -> Value {
@@ -120,6 +129,7 @@ impl Operation {
         Self { id: unique_id(), attributes, to_token_stream, mnemonic, num_outputs, inputs, regions }
     }
 
+    #[allow(unused)]
     pub fn mnemonic(&self) -> &str {
         &self.mnemonic
     }
