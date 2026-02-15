@@ -4,7 +4,7 @@ use std::{
 };
 use syn::{Expr, Ident, Path, Type, spanned::Spanned};
 
-use super::utility::{as_ident, as_literal_int, as_literal_int_range, as_type, parse_nvp_attribute_group, path};
+use crate::attribute::{as_ident, as_literal_int, as_literal_int_range, as_type, parse_nvp_attribute_group, path};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Field {

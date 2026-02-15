@@ -1,3 +1,4 @@
+mod attribute;
 mod r#enum;
 mod ir;
 mod r#struct;

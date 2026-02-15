@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use super::field::Field;
-use super::utility::{as_literal_int, parse_nvp_attribute_group, path};
+use crate::attribute::{as_literal_int, parse_nvp_attribute_group, path};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
