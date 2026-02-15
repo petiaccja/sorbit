@@ -4,7 +4,7 @@ use sorbit::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Offset {
     pre: u8,
-    #[sorbit_layout(offset = 4)]
+    #[sorbit(offset = 4)]
     subject: u8,
     post: u8,
 }
@@ -12,7 +12,7 @@ struct Offset {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Align {
     pre: u8,
-    #[sorbit_layout(align = 4)]
+    #[sorbit(align = 4)]
     subject: u8,
     post: u8,
 }
@@ -20,7 +20,7 @@ struct Align {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Round {
     pre: u8,
-    #[sorbit_layout(round = 4)]
+    #[sorbit(round = 4)]
     subject: u8,
     post: u8,
 }
@@ -28,7 +28,7 @@ struct Round {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct All {
     pre: u8,
-    #[sorbit_layout(offset = 7, align = 2, round = 3)]
+    #[sorbit(offset = 7, align = 2, round = 3)]
     subject: u8,
     post: u8,
 }

@@ -3,7 +3,7 @@ use syn::DeriveInput;
 
 use sorbit_derive_impl::DeriveObject;
 
-#[proc_macro_derive(Serialize, attributes(sorbit_layout, sorbit_bit_field))]
+#[proc_macro_derive(Serialize, attributes(sorbit))]
 pub fn derive_serialize(tokens: TokenStream) -> TokenStream {
     let input: DeriveInput = match syn::parse(tokens) {
         Ok(input) => input,
@@ -16,7 +16,7 @@ pub fn derive_serialize(tokens: TokenStream) -> TokenStream {
     object.derive_serialize().into()
 }
 
-#[proc_macro_derive(Deserialize, attributes(sorbit_layout))]
+#[proc_macro_derive(Deserialize, attributes(sorbit))]
 pub fn derive_deserialize(tokens: TokenStream) -> TokenStream {
     let input: DeriveInput = match syn::parse(tokens) {
         Ok(input) => input,

@@ -3,23 +3,23 @@ use sorbit::{Deserialize, Serialize};
 use crate::utility::{from_bytes, to_bytes};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[sorbit_layout(round = 4)]
+#[sorbit(round = 4)]
 struct IPv4Header {
-    #[sorbit_bit_field(_version_ihl, repr(u8), bits(4..8))]
+    #[sorbit(bit_field=_version_ihl, repr=u8, bits=4..8)]
     version: u8,
-    #[sorbit_bit_field(_version_ihl, bits(0..4))]
+    #[sorbit(bit_field=_version_ihl, bits=0..4)]
     ihl: u8, // defer: ihl(self)
-    #[sorbit_bit_field(_dscp_ecn, repr(u8), bits(2..8))]
+    #[sorbit(bit_field=_dscp_ecn, repr=u8, bits=2..8)]
     dscp: u8,
-    #[sorbit_bit_field(_dscp_ecn, bits(0..2))]
+    #[sorbit(bit_field=_dscp_ecn, bits=0..2)]
     ecn: u8,
     total_length: u16,
     identification: u16,
-    #[sorbit_bit_field(_flags_fo, repr(u16), bits(14))]
+    #[sorbit(bit_field=_flags_fo, repr=u16, bits=14)]
     dont_fragment: bool,
-    #[sorbit_bit_field(_flags_fo, bits(13))]
+    #[sorbit(bit_field=_flags_fo, bits=13)]
     more_fragments: bool,
-    #[sorbit_bit_field(_flags_fo, bits(0..13))]
+    #[sorbit(bit_field=_flags_fo, bits=0..13)]
     fragment_offset: u16,
     time_to_live: u8,
     protocol: u8,

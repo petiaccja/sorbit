@@ -2,13 +2,13 @@ use crate::utility::{from_bytes, to_bytes};
 use sorbit::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[sorbit_layout(len = 3)]
+#[sorbit(len = 3)]
 struct Len {
     a: u8,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[sorbit_layout(round = 5)]
+#[sorbit(round = 5)]
 struct Round {
     a: u32,
 }

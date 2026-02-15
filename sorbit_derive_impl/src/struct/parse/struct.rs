@@ -1,7 +1,9 @@
+use std::collections::HashSet;
+
 use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
 
 use super::field::Field;
-use super::utility::{parse_literal_int_meta, parse_meta_list_attr, sorbit_layout_path};
+use super::utility::{as_literal_int, parse_nvp_attribute_group, path};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -17,25 +19,24 @@ impl TryFrom<DeriveInput> for Struct {
     fn try_from(value: DeriveInput) -> Result<Self, Self::Error> {
         match value.data {
             syn::Data::Struct(data_struct) => {
-                let mut len = None;
-                let mut round = None;
+                let sorbit_attrs = value.attrs.iter().filter(|attr| attr.path() == &path::sorbit_attribute());
+                let parameters = parse_nvp_attribute_group(sorbit_attrs)?;
 
-                let layout_attrs = value.attrs.iter().filter(|attr| attr.path() == &sorbit_layout_path());
-                for attribute in layout_attrs {
-                    parse_meta_list_attr(
-                        attribute,
-                        &mut [
-                            ("len", &mut |meta| parse_literal_int_meta(&mut len, meta)),
-                            ("round", &mut |meta| parse_literal_int_meta(&mut round, meta)),
-                        ],
-                    )?;
+                let accepted_parameters: HashSet<_> = [path::len(), path::round()].into_iter().collect();
+                for (name, _) in &parameters {
+                    if !accepted_parameters.contains(&name) {
+                        return Err(syn::Error::new(name.span(), "invalid parameter"));
+                    }
                 }
 
+                let len = parameters.get(&path::len()).map(|expr| as_literal_int(expr)).transpose()?;
+                let round = parameters.get(&path::round()).map(|expr| as_literal_int(expr)).transpose()?;
                 let fields = data_struct
                     .fields
                     .into_iter()
                     .map(|field| Field::try_from(field))
                     .collect::<Result<Vec<_>, _>>()?;
+
                 Ok(Self { ident: value.ident, generics: value.generics, len, round, fields })
             }
             syn::Data::Enum(_) => Err(syn::Error::new(value.span(), "expected a struct, got an enum")),
@@ -69,7 +70,7 @@ mod tests {
     #[test]
     fn with_layout_merged() {
         let input: DeriveInput = parse_quote!(
-            #[sorbit_layout(len = 1, round = 2)]
+            #[sorbit(len = 1, round = 2)]
             struct Struct {}
         );
         let actual = Struct::try_from(input).unwrap();
@@ -86,8 +87,8 @@ mod tests {
     #[test]
     fn with_layout_split() {
         let input: DeriveInput = parse_quote!(
-            #[sorbit_layout(len = 1)]
-            #[sorbit_layout(round = 2)]
+            #[sorbit(len = 1)]
+            #[sorbit(round = 2)]
             struct Struct {}
         );
         let actual = Struct::try_from(input).unwrap();
@@ -146,7 +147,7 @@ mod tests {
     #[should_panic]
     fn invalid_key() {
         let input: DeriveInput = parse_quote!(
-            #[sorbit_layout(invalid_key = 1)]
+            #[sorbit(invalid_key = 1)]
             struct Struct {}
         );
         Struct::try_from(input).unwrap();
@@ -156,7 +157,7 @@ mod tests {
     #[should_panic]
     fn invalid_value() {
         let input: DeriveInput = parse_quote!(
-            #[sorbit_layout(len=invalid_value)]
+            #[sorbit(len=invalid_value)]
             struct Struct {}
         );
         Struct::try_from(input).unwrap();

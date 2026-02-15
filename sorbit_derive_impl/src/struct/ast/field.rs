@@ -159,7 +159,6 @@ mod tests {
 
     use crate::ir::pattern_match::assert_matches;
 
-    use quote::ToTokens;
     use syn::parse_quote;
 
     #[test]
@@ -264,7 +263,6 @@ mod tests {
         ]
         ";
         assert_matches!(op, pattern);
-        println!("{}", input.to_deserialize_op(deserializer).to_token_stream())
     }
 
     fn make_bit_field_empty() -> Field {

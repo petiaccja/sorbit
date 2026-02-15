@@ -3,15 +3,15 @@ use sorbit::{Deserialize, Serialize, bit::Error as BitError, error::Error};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Packing {
-    #[sorbit_bit_field(_b, repr(u16), bits(4..10))]
+    #[sorbit(bit_field=_b, repr=u16, bits=4..10)]
     a: u8,
-    #[sorbit_bit_field(_b, bits(14..=15))]
+    #[sorbit(bit_field=_b, bits=14..=15)]
     b: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct Layout {
-    #[sorbit_bit_field(_b, repr(u16), offset = 2, round = 4, bits(4..10))]
+    #[sorbit(bit_field=_b, repr=u16, offset = 2, round = 4, bits=4..10)]
     a: u8,
 }
 

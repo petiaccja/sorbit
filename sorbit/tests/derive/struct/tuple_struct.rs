@@ -7,7 +7,7 @@ use sorbit::{Deserialize, Serialize};
 struct Direct<T: Serialize + Deserialize + PartialEq>(T);
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-struct BitField(#[sorbit_bit_field(_b, repr(u8), bits(0))] bool, #[sorbit_bit_field(_b, bits(1))] bool);
+struct BitField(#[sorbit(bit_field=_b, repr=u8, bits=0)] bool, #[sorbit(bit_field=_b, bits=1)] bool);
 
 const DIRECT_VALUE: Direct<i32> = Direct::<i32>(-72);
 const DIRECT_BYTES: [u8; 4] = (-72i32).cast_unsigned().to_be_bytes();
