@@ -4,6 +4,16 @@ use crate::ir::ops::{
     SerializeObjectOp, TryOp, YieldOp,
 };
 
+pub trait ToSerializeOp {
+    type Args;
+    fn to_serialize_op(&self, args: Self::Args) -> Operation;
+}
+
+pub trait ToDeserializeOp {
+    type Args;
+    fn to_deserialize_op(&self, args: Self::Args) -> Operation;
+}
+
 pub fn lower_offset(serializer: Value, offset: Option<u64>, serializing: bool, ops: &mut Vec<Operation>) {
     if let Some(offset) = offset {
         let offset = PadOp::new(serializer, offset, serializing);

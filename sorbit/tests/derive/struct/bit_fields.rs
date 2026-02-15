@@ -2,9 +2,8 @@ use crate::utility::{from_bytes, to_bytes};
 use sorbit::{Deserialize, Serialize, bit::Error as BitError, error::Error};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[sorbit_bit_field(_b, repr(u16))]
 struct Packing {
-    #[sorbit_bit_field(_b, bits(4..10))]
+    #[sorbit_bit_field(_b, repr(u16), bits(4..10))]
     a: u8,
     #[sorbit_bit_field(_b, bits(14..=15))]
     b: bool,

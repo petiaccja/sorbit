@@ -9,7 +9,7 @@ pub fn derive_serialize(tokens: TokenStream) -> TokenStream {
         Ok(input) => input,
         Err(err) => return err.into_compile_error().into(),
     };
-    let object = match DeriveObject::parse(&input) {
+    let object = match DeriveObject::parse(input) {
         Ok(object) => object,
         Err(err) => return err.into_compile_error().into(),
     };
@@ -22,7 +22,7 @@ pub fn derive_deserialize(tokens: TokenStream) -> TokenStream {
         Ok(input) => input,
         Err(err) => return err.into_compile_error().into(),
     };
-    let object = match DeriveObject::parse(&input) {
+    let object = match DeriveObject::parse(input) {
         Ok(object) => object,
         Err(err) => return err.into_compile_error().into(),
     };

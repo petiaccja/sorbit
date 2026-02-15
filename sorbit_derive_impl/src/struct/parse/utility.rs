@@ -16,10 +16,6 @@ pub fn sorbit_bit_field_path() -> Path {
     parse_quote! {sorbit_bit_field}
 }
 
-pub fn placeholder_type() -> Type {
-    parse_quote! {::sorbit::Placeholder}
-}
-
 pub fn parse_literal_int_meta<N>(value: &mut Option<N>, meta: &Meta) -> Result<(), syn::Error>
 where
     N: FromStr<Err: Display> + Display,
@@ -36,13 +32,13 @@ where
         Ok(())
     }
 }
-pub fn parse_type_meta(value: &mut Type, meta: &Meta) -> Result<(), syn::Error> {
-    if value != &placeholder_type() {
+pub fn parse_type_meta(value: &mut Option<Type>, meta: &Meta) -> Result<(), syn::Error> {
+    if value.is_some() {
         let path = meta.path().to_token_stream();
         Err(syn::Error::new(meta.span(), format!("the parameter `{path}` has already been defined")))
     } else {
         let list = meta.require_list()?;
-        *value = list.parse_args()?;
+        *value = Some(list.parse_args()?);
         Ok(())
     }
 }

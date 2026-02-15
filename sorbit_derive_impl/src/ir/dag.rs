@@ -173,6 +173,7 @@ pub struct Value {
 }
 
 impl Value {
+    #[allow(unused)] // Only used in tests at the moment.
     pub fn new_standalone() -> Self {
         Self { parent: unique_id(), index: 0 }
     }
