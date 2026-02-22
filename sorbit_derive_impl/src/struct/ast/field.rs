@@ -3,16 +3,15 @@ use std::ops::Range;
 use syn::{Ident, Member, Type};
 
 use super::lowering::{
-    ToSerializeOp, lower_alignment, lower_deserialization_rounding, lower_offset, lower_serialization_rounding,
+    ToDeserializeOp, ToSerializeOp, lower_alignment, lower_deserialization_rounding, lower_offset,
+    lower_serialization_rounding,
 };
 
 use crate::attribute::{BitNumbering, ByteOrder};
-use crate::ir::dag::{Operation, Region, Value};
+use crate::ir::dag::{Region, Value};
 use crate::ir::ops::{
-    EmptyBitFieldOp, ExecuteOp, IntoBitFieldOp, IntoRawBitsOp, MemberOp, PackBitFieldOp, RefOp, SelfOp, TryOp,
-    UnpackBitFieldOp, YieldOp,
+    self as ops, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, self_, try_, unpack_bit_field,
 };
-use crate::r#struct::ast::lowering::ToDeserializeOp;
 
 pub enum Field {
     Direct {
@@ -45,68 +44,34 @@ pub struct BitFieldMember {
 impl ToSerializeOp for Field {
     type Args = Value;
 
-    fn to_serialize_op(&self, serializer: Value) -> Operation {
+    fn to_serialize_op(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
         match self {
             Field::Direct { member, ty: _, byte_order, offset, align, round } => {
-                ExecuteOp::new(Region::new(0, |_| {
-                    let mut ops = Vec::new();
-
-                    let self_ = SelfOp::new();
-                    let object = MemberOp::new(self_.output(), member.clone(), true);
-                    let object_val = object.output();
-                    ops.extend([self_.operation, object.operation].into_iter());
-
-                    lower_offset(serializer.clone(), *offset, true, &mut ops);
-                    lower_alignment(serializer.clone(), *align, true, &mut ops);
-                    let output = lower_serialization_rounding(serializer, object_val, *byte_order, *round, &mut ops);
-                    ops.push(YieldOp::new(vec![output]).operation);
-
-                    ops
-                }))
-                .operation
+                let self_ = self_(region);
+                let object = ops::member(region, self_, member.clone(), true);
+                lower_offset(region, serializer.clone(), *offset, true);
+                lower_alignment(region, serializer.clone(), *align, true);
+                let result = lower_serialization_rounding(region, serializer, object, *byte_order, *round);
+                vec![result]
             }
             Field::Bit { ident: _, ty, byte_order, bit_numbering, offset, align, round, members } => {
-                ExecuteOp::new(Region::new(0, |_| {
-                    let mut ops = Vec::new();
-                    let self_ = SelfOp::new();
-                    let self_output = self_.output();
-                    ops.extend([self_.operation].into_iter());
+                let self_ = self_(region);
 
-                    let mut bf = EmptyBitFieldOp::new(ty.clone()).operation;
+                let mut bit_field = empty_bit_field(region, ty.clone());
 
-                    for member in members {
-                        let mem = MemberOp::new(self_output.clone(), member.member.clone(), true);
-                        let maybe_new_bf = PackBitFieldOp::new(
-                            serializer.clone(),
-                            mem.output(),
-                            bf.output(0),
-                            member.bits.clone(),
-                            *bit_numbering,
-                        );
-                        let new_bf = TryOp::new(maybe_new_bf.output()).operation;
-                        ops.extend(
-                            [
-                                std::mem::replace(&mut bf, new_bf),
-                                mem.operation,
-                                maybe_new_bf.operation,
-                            ]
-                            .into_iter(),
-                        );
-                    }
+                for member in members {
+                    let object = ops::member(region, self_, member.member.clone(), true);
+                    let maybe_new_bit_field =
+                        pack_bit_field(region, serializer, object, bit_field, member.bits.clone(), *bit_numbering);
+                    bit_field = try_(region, maybe_new_bit_field);
+                }
 
-                    let raw = IntoRawBitsOp::new(bf.output(0));
-                    let raw_ref = RefOp::new(raw.output());
-                    let raw_ref_out = raw_ref.output();
-                    ops.extend([bf, raw.operation, raw_ref.operation].into_iter());
-
-                    lower_offset(serializer.clone(), *offset, true, &mut ops);
-                    lower_alignment(serializer.clone(), *align, true, &mut ops);
-                    let output = lower_serialization_rounding(serializer, raw_ref_out, *byte_order, *round, &mut ops);
-                    ops.push(YieldOp::new(vec![output]).operation);
-
-                    ops
-                }))
-                .operation
+                let raw = into_raw_bits(region, bit_field);
+                let raw_ref = ref_(region, raw);
+                lower_offset(region, serializer, *offset, true);
+                lower_alignment(region, serializer, *align, true);
+                let result = lower_serialization_rounding(region, serializer, raw_ref, *byte_order, *round);
+                vec![result]
             }
         }
     }
@@ -115,54 +80,30 @@ impl ToSerializeOp for Field {
 impl ToDeserializeOp for Field {
     type Args = Value;
 
-    fn to_deserialize_op(&self, deserializer: Value) -> Operation {
+    fn to_deserialize_op(&self, region: &mut Region, deserializer: Value) -> Vec<Value> {
         match self {
             Field::Direct { member: _, ty, byte_order, offset, align, round } => {
-                ExecuteOp::new(Region::new(0, |_| {
-                    let mut ops = Vec::new();
-                    lower_offset(deserializer.clone(), *offset, false, &mut ops);
-                    lower_alignment(deserializer.clone(), *align, false, &mut ops);
-                    let output =
-                        lower_deserialization_rounding(deserializer, ty.clone(), *byte_order, *round, &mut ops);
-                    ops.push(YieldOp::new(vec![output]).operation);
-                    ops
-                }))
-                .operation
+                lower_offset(region, deserializer, *offset, false);
+                lower_alignment(region, deserializer, *align, false);
+                let result = lower_deserialization_rounding(region, deserializer, ty.clone(), *byte_order, *round);
+                vec![result]
             }
             Field::Bit { ident: _, ty, byte_order, bit_numbering, offset, align, round, members } => {
-                ExecuteOp::new(Region::new(0, |_| {
-                    let mut ops = Vec::new();
+                lower_offset(region, deserializer, *offset, false);
+                lower_alignment(region, deserializer, *align, false);
+                let maybe_raw_bits =
+                    lower_deserialization_rounding(region, deserializer, ty.clone(), *byte_order, *round);
+                let raw_bits = try_(region, maybe_raw_bits);
+                let bit_field = into_bit_field(region, raw_bits);
 
-                    lower_offset(deserializer.clone(), *offset, false, &mut ops);
-                    lower_alignment(deserializer.clone(), *align, false, &mut ops);
-                    let maybe_raw_bits =
-                        lower_deserialization_rounding(deserializer, ty.clone(), *byte_order, *round, &mut ops);
-                    let raw_bits = TryOp::new(maybe_raw_bits);
-                    let bit_field = IntoBitFieldOp::new(raw_bits.output());
-                    let bit_field_output = bit_field.output();
-                    ops.extend([raw_bits.operation, bit_field.operation].into_iter());
+                let unpacked = members
+                    .iter()
+                    .map(|member| {
+                        unpack_bit_field(region, bit_field, member.ty.clone(), member.bits.clone(), *bit_numbering)
+                    })
+                    .collect();
 
-                    let _unpacked = members
-                        .iter()
-                        .map(|member| {
-                            let maybe_mem = UnpackBitFieldOp::new(
-                                member.ty.clone(),
-                                bit_field_output.clone(),
-                                member.bits.clone(),
-                                *bit_numbering,
-                            );
-                            let maybe_mem_output = maybe_mem.output();
-                            ops.extend([maybe_mem.operation].into_iter());
-                            maybe_mem_output
-                        })
-                        .collect();
-
-                    let yield_ = YieldOp::new(_unpacked);
-                    ops.extend([yield_.operation].into_iter());
-
-                    ops
-                }))
-                .operation
+                unpacked
             }
         }
     }
@@ -172,7 +113,7 @@ impl ToDeserializeOp for Field {
 mod tests {
     use super::*;
 
-    use crate::ir::pattern_match::assert_matches;
+    use crate::ir::{dag::Id, ops::yield_, pattern_match::assert_matches};
 
     use syn::parse_quote;
 
@@ -187,15 +128,21 @@ mod tests {
             round: None,
         };
 
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer));
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        println!("{op}");
+
         let pattern = "
-        %out = execute || [
+        {
             %self = self
-            %foo = member [foo, &] %self
+            %foo = member [foo, ref] %self
             %res = serialize_object %serializer, %foo
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -211,18 +158,22 @@ mod tests {
             round: None,
         };
 
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer));
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %out = execute || [
+        {
             %self = self
-            %foo = member [foo, &] %self
-            %res = with_byte_order[BigEndian] %serializer |%se_inner| [
+            %foo = member [foo, ref] %self
+            %res = byte_order[BigEndian] %serializer |%se_inner| {
                 %res_inner = serialize_object %se_inner, %foo
                 yield %res_inner
-            ]
+            }
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -238,30 +189,34 @@ mod tests {
             round: Some(3),
         };
 
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer.clone()));
-        let pattern = "
-        %out = execute || [
-            %self = self
-            %foo = member [foo, &] %self
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
 
-            %offset = pad [1] %serializer
+        let pattern = "
+        {
+            %self = self
+            %foo = member [foo, ref] %self
+
+            %offset = pad [1, true] %serializer
             %try_offset = try %offset
 
-            %align = align [2] %serializer
+            %align = align [2, true] %serializer
             %try_align = try %align
             
-            %res = serialize_composite %serializer |%s_inner| [
+            %res = serialize_composite %serializer |%s_inner| {
                 %res_inner = serialize_object %s_inner, %foo
-                %round = align [3] %s_inner
+                %round = align [3, true] %s_inner
                 %try_round = try %round
                 yield %res_inner
-            ]
+            }
             %res_try = try %res
-            %res_1 = member [1, *] %res_try
+            %res_1 = member [1, val] %res_try
             %res_ok = ok %res_1
             yield %res_ok
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -277,33 +232,37 @@ mod tests {
             round: Some(3),
         };
 
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer.clone()));
-        let pattern = "
-        %out = execute || [
-            %self = self
-            %foo = member [foo, &] %self
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
 
-            %offset = pad [1] %serializer
+        let pattern = "
+        {
+            %self = self
+            %foo = member [foo, ref] %self
+
+            %offset = pad [1, true] %serializer
             %try_offset = try %offset
 
-            %align = align [2] %serializer
+            %align = align [2, true] %serializer
             %try_align = try %align
             
-            %res = serialize_composite %serializer |%s_inner| [
-                %res_inner = with_byte_order[BigEndian] %s_inner |%se_bo| [
+            %res = serialize_composite %serializer |%s_inner| {
+                %res_inner = byte_order[BigEndian] %s_inner |%se_bo| {
                     %res_bo = serialize_object %se_bo, %foo
                     yield %res_bo
-                ]
-                %round = align [3] %s_inner
+                }
+                %round = align [3, true] %s_inner
                 %try_round = try %round
                 yield %res_inner
-            ]
+            }
             %res_try = try %res
-            %res_1 = member [1, *] %res_try
+            %res_1 = member [1, val] %res_try
             %res_ok = ok %res_1
             yield %res_ok
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -319,13 +278,17 @@ mod tests {
             round: None,
         };
 
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %out = execute || [
+        {
             %res = deserialize_object [i32] %serializer
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -340,16 +303,20 @@ mod tests {
             round: None,
         };
 
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
+        let de = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, de);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %out = execute || [
-            %res = with_byte_order[BigEndian] %de |%de_bo| [
+        {
+            %res = byte_order[BigEndian] %de |%de_bo| {
                 %res_bo = deserialize_object [i32] %de_bo
                 yield %res_bo
-            ]
+            }
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -365,24 +332,28 @@ mod tests {
             round: Some(3),
         };
 
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer.clone()));
+        let de = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, de);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %out = execute || [
-            %offset = pad [1] %deserializer
+        {
+            %offset = pad [1, false] %deserializer
             %try_offset = try %offset
 
-            %align = align [2] %deserializer
+            %align = align [2, false] %deserializer
             %try_align = try %align
 
-            %res = deserialize_composite %deserializer |%des_inner| [
+            %res = deserialize_composite %deserializer |%des_inner| {
                 %res_inner = deserialize_object [i32] %des_inner
-                %round = align [3] %des_inner
+                %round = align [3, false] %des_inner
                 %try_round = try %round
                 yield %res_inner
-            ]
+            }
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -398,27 +369,31 @@ mod tests {
             round: Some(3),
         };
 
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer.clone()));
+        let de = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, de);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %out = execute || [
-            %offset = pad [1] %deserializer
+        {
+            %offset = pad [1, false] %deserializer
             %try_offset = try %offset
 
-            %align = align [2] %deserializer
+            %align = align [2, false] %deserializer
             %try_align = try %align
 
-            %res = deserialize_composite %deserializer |%des_inner| [
-                %res_inner = with_byte_order[BigEndian] %des_inner |%de_bo| [
+            %res = deserialize_composite %deserializer |%des_inner| {
+                %res_inner = byte_order[BigEndian] %des_inner |%de_bo| {
                     %res_bo = deserialize_object [i32] %de_bo
                     yield %res_bo
-                ]
-                %round = align [3] %des_inner
+                }
+                %round = align [3, false] %des_inner
                 %try_round = try %round
                 yield %res_inner
-            ]
+            }
             yield %res
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -455,17 +430,22 @@ mod tests {
     #[test]
     fn to_serialize_op_bit_default() {
         let input = make_bit_field_empty();
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer));
+
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %res = execute || [
-        %self = self
+        {
+            %self = self
             %bf = empty_bit_field [u16]
             %raw = into_raw_bits %bf
             %ref_raw = ref %raw
             %s = serialize_object %serializer %ref_raw
             yield %s
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -473,19 +453,24 @@ mod tests {
     #[test]
     fn to_serialize_op_bit_with_members() {
         let input = make_bit_field_with_members();
-        let serializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_serialize_op(serializer));
+
+        let serializer = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, serializer);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %res = execute || [
+        {
             %self = self
 
             %bf0 = empty_bit_field [u16]
             
-            %foo = member [foo, &] %self
+            %foo = member [foo, ref] %self
             %maybe_bf1 = pack_bit_field [4..7, LSB0] %serializer %foo %bf0
             %bf1 = try %maybe_bf1
 
-            %bar = member [bar, &] %self
+            %bar = member [bar, ref] %self
             %maybe_bf2 = pack_bit_field [0..4, LSB0] %serializer %bar %bf1
             %bf2 = try %maybe_bf2
 
@@ -493,7 +478,7 @@ mod tests {
             %ref_raw = ref %raw
             %s = serialize_object %serializer %ref_raw
             yield %s
-        ]        
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -501,15 +486,20 @@ mod tests {
     #[test]
     fn to_deserialize_op_bit_empty() {
         let input = make_bit_field_empty();
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
+
+        let de = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, de);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        execute || [
+        {
             %s = deserialize_object [u16] %deserializer
             %try_s = try %s
             %bf = into_bit_field %try_s
             yield
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }
@@ -517,10 +507,15 @@ mod tests {
     #[test]
     fn to_deserialize_op_bit_with_members() {
         let input = make_bit_field_with_members();
-        let deserializer = Value::new_standalone();
-        let op = format!("{:#?}", input.to_deserialize_op(deserializer));
+
+        let de = Id::new().value(0);
+        let mut region = Region::new(0);
+        let results = input.to_deserialize_op(&mut region, de);
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
         let pattern = "
-        %0, %1 = execute || [
+        {
             %s = deserialize_object [u16] %deserializer
             %try_s = try %s
             %bf = into_bit_field %try_s
@@ -529,7 +524,7 @@ mod tests {
             %maybe_bar = unpack_bit_field [i8, 0..4, LSB0] %bf
 
             yield %maybe_foo, %maybe_bar
-        ]
+        }
         ";
         assert_matches!(op, pattern);
     }

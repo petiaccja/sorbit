@@ -1,58 +1,162 @@
-use itertools::Itertools;
+use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+
 use petgraph::{algo::toposort, graph::DiGraph};
 use proc_macro2::TokenStream;
-use quote::{ToTokens, format_ident, quote};
-use std::{
-    collections::HashMap,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use quote::ToTokens;
+use quote::format_ident;
+use quote::quote;
 
-static OPERATION_ID: AtomicU64 = AtomicU64::new(0);
+//------------------------------------------------------------------------------
+// Operation trait
+//------------------------------------------------------------------------------
 
-fn unique_id() -> u64 {
-    OPERATION_ID.fetch_add(1, Ordering::Relaxed)
+pub trait Operation {
+    fn name(&self) -> &str;
+    fn id(&self) -> Id;
+    fn is_terminator(&self) -> bool {
+        false
+    }
+    fn inputs(&self) -> Vec<Value>;
+    fn outputs(&self) -> Vec<Value>;
+    fn regions(&self) -> Vec<&Region>;
+    fn attributes(&self) -> Vec<String>;
+    fn to_token_stream(&self) -> TokenStream;
+    fn to_string(&self, alternate: bool) -> String {
+        let outputs = self.outputs().iter().map(|output| format!("{output}")).collect::<Vec<_>>().join(", ");
+        let inputs = self.inputs().iter().map(|input| format!("{input}")).collect::<Vec<_>>().join(", ");
+        let attributes = self.attributes().join(", ");
+        let regions = self
+            .regions()
+            .iter()
+            .map(|region| if alternate { format!("{region:#}") } else { format!("{region}") })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let mut s = String::new();
+        if !outputs.is_empty() {
+            s.push_str(&format!("{outputs} = "));
+        };
+        s.push_str(self.name());
+        if !attributes.is_empty() {
+            s.push_str(&format!(" [{attributes}]"));
+        };
+        if !inputs.is_empty() {
+            s.push_str(&format!(" {inputs}"));
+        };
+        if !regions.is_empty() {
+            s.push_str(&format!(" {regions}"));
+        }
+        s
+    }
 }
 
+impl ToTokens for dyn Operation {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(self.to_token_stream());
+    }
+}
+
+//------------------------------------------------------------------------------
+// Id structure
+//------------------------------------------------------------------------------
+
+static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn next_id() -> usize {
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Id(usize);
+
+impl Id {
+    pub fn new() -> Self {
+        Self(next_id())
+    }
+
+    pub fn value(&self, index: usize) -> Value {
+        Value { owner: *self, index }
+    }
+}
+
+impl std::fmt::Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+//------------------------------------------------------------------------------
+// Value structure
+//------------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Value {
+    pub owner: Id,
+    pub index: usize,
+}
+
+impl Value {
+    pub fn new(owner: Id, index: usize) -> Self {
+        Self { owner, index }
+    }
+
+    pub fn to_ident(&self) -> syn::Ident {
+        format_ident!("v{}_{}", self.owner.0, self.index)
+    }
+}
+
+impl ToTokens for Value {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.to_ident().to_tokens(tokens);
+    }
+}
+
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "%{}_{}", self.owner, self.index)
+    }
+}
+
+//------------------------------------------------------------------------------
+// Region structure
+//------------------------------------------------------------------------------
+
 pub struct Region {
+    #[allow(unused)]
+    id: Id,
     arguments: Vec<Value>,
-    operations: Vec<Operation>,
+    operations: Vec<Box<dyn Operation>>,
 }
 
 impl Region {
-    pub fn new(num_args: usize, operations: impl FnOnce(&[Value]) -> Vec<Operation>) -> Self {
-        let id = unique_id();
-        let arguments: Vec<_> = (0..num_args).map(|index| Value { parent: id, index }).collect();
-        let operations = operations(&arguments);
-        Self { arguments, operations }
+    pub fn new(num_arguments: usize) -> Self {
+        let id = Id::new();
+        let arguments: Vec<_> = (0..num_arguments).map(|index| Value::new(id, index)).collect();
+        Self { id, arguments, operations: Vec::new() }
     }
 
-    #[allow(unused)]
-    pub fn operations(&self) -> &[Operation] {
-        &self.operations
+    pub fn arguments(&self) -> &[Value] {
+        &self.arguments
     }
 
-    pub fn num_outputs(&self) -> usize {
-        if let Some(last_op) = self.operations.last() {
-            if last_op.mnemonic() == "yield" { last_op.inputs.len() } else { 0 }
-        } else {
-            0
+    pub fn push(&mut self, operation: impl Operation + 'static) -> Vec<Value> {
+        if self.operations.last().is_some_and(|last| last.is_terminator()) {
+            panic!("region has already been terminated")
         }
+        let outputs = operation.outputs();
+        self.operations.push(Box::new(operation) as Box<dyn Operation>);
+        outputs
     }
 
-    pub fn argument(&self, index: usize) -> Value {
-        self.arguments[index].clone()
-    }
-}
-
-impl ToTokens for Region {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
+    pub fn to_token_stream_formatted(&self, with_braces: bool) -> TokenStream {
         let mut graph = DiGraph::new();
         let mut id_to_node = HashMap::new();
         {
             let mut predecessor = None;
-            for op in &self.operations {
-                let node = graph.add_node(op);
-                id_to_node.insert(op.id, node);
+            for operation in &self.operations {
+                let node = graph.add_node(operation);
+                id_to_node.insert(operation.id(), node);
                 if let Some(predecessor) = predecessor {
                     graph.add_edge(predecessor, node, ());
                 }
@@ -65,142 +169,63 @@ impl ToTokens for Region {
         // Regions must also be traversed recursively for each op.
         for node in graph.node_indices() {
             let op = graph.node_weight(node).unwrap();
-            for input in &op.inputs {
-                if let Some(predecessor) = id_to_node.get(&input.parent) {
+            for input in op.inputs() {
+                if let Some(predecessor) = id_to_node.get(&input.owner) {
                     graph.add_edge(*predecessor, node, ());
                 }
             }
         }
 
-        let ts = match toposort(&graph, None) {
+        match toposort(&graph, None) {
             Ok(order) => {
                 let ops = order.iter().map(|op_idx| {
                     let op = graph.node_weight(*op_idx).unwrap();
-                    let outputs = (0..op.num_outputs).map(|index| op.output(index));
-                    if op.mnemonic == "yield" {
+                    let outputs = op.outputs();
+                    if op.is_terminator() {
                         quote! { #op }
-                    } else if op.num_outputs == 0 {
+                    } else if outputs.is_empty() {
                         quote! { #op; }
-                    } else if op.num_outputs == 1 {
+                    } else if outputs.len() == 1 {
                         quote! { let #(#outputs),* = #op; }
                     } else {
                         quote! { let (#(#outputs),*) = #op; }
                     }
                 });
-                quote! {{
-                    #(#ops)*
-                }}
+                match with_braces {
+                    true => quote! { { #(#ops)* } },
+                    false => quote! { #(#ops)* },
+                }
             }
             Err(cycle) => {
                 syn::Error::new(proc_macro2::Span::call_site(), format!("cycle at node {}", cycle.node_id().index()))
                     .into_compile_error()
             }
+        }
+    }
+}
+
+impl std::fmt::Display for Region {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let arguments = self.arguments.iter().map(|arg| format!("{arg}")).collect::<Vec<_>>().join(", ");
+        let prefix = if f.alternate() { "    " } else { "" };
+        let operations = textwrap::indent(
+            &self
+                .operations
+                .iter()
+                .map(|operation| operation.to_string(f.alternate()))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            prefix,
+        );
+        if !arguments.is_empty() {
+            write!(f, "|{arguments}| ")?;
         };
-        tokens.extend(ts);
+        write!(f, "{{\n{operations}\n}}")
     }
 }
 
-impl std::fmt::Debug for Region {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "|{}| ", self.arguments.iter().map(|value| format!("{value:?}")).join(", "))?;
-        f.debug_list().entries(self.operations.iter()).finish()
-    }
-}
-
-pub struct Operation {
-    id: u64,
-    mnemonic: String,
-    attributes: Vec<String>,
-    to_token_stream: Box<dyn Fn(&Operation) -> TokenStream>,
-    pub num_outputs: usize,
-    pub inputs: Vec<Value>,
-    pub regions: Vec<Region>,
-}
-
-impl Operation {
-    pub fn new(
-        mnemonic: String,
-        attributes: Vec<String>,
-        to_token_stream: Box<dyn Fn(&Operation) -> TokenStream>,
-        num_outputs: usize,
-        inputs: Vec<Value>,
-        regions: Vec<Region>,
-    ) -> Self {
-        Self { id: unique_id(), attributes, to_token_stream, mnemonic, num_outputs, inputs, regions }
-    }
-
-    #[allow(unused)]
-    pub fn mnemonic(&self) -> &str {
-        &self.mnemonic
-    }
-
-    pub fn output(&self, index: usize) -> Value {
-        assert!(index < self.num_outputs);
-        Value { parent: self.id, index }
-    }
-}
-
-impl ToTokens for Operation {
+impl ToTokens for Region {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        tokens.extend((self.to_token_stream)(self));
-    }
-}
-
-impl std::fmt::Debug for Operation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.num_outputs > 0 {
-            for (index, output) in (0..self.num_outputs).map(|index| self.output(index)).enumerate() {
-                if index == 0 {
-                    write!(f, "{output:?}")?;
-                } else {
-                    write!(f, ", {output:?}")?;
-                }
-            }
-            write!(f, " = ")?;
-        }
-        write!(f, "{}", self.mnemonic)?;
-        if !self.attributes.is_empty() {
-            write!(f, "[{}]", self.attributes.join(", "))?;
-        }
-        for input in &self.inputs {
-            write!(f, " {input:?}")?;
-        }
-        for region in &self.regions {
-            if f.alternate() {
-                write!(f, " {region:#?}")?;
-            } else {
-                write!(f, " {region:?}")?;
-            }
-        }
-        Ok(())
-    }
-}
-
-#[derive(Clone)]
-pub struct Value {
-    parent: u64,
-    index: usize,
-}
-
-impl Value {
-    #[allow(unused)] // Only used in tests at the moment.
-    pub fn new_standalone() -> Self {
-        Self { parent: unique_id(), index: 0 }
-    }
-
-    pub fn to_ident(&self) -> syn::Ident {
-        format_ident!("v{}_{}", self.parent, self.index)
-    }
-}
-
-impl ToTokens for Value {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        self.to_ident().to_tokens(tokens);
-    }
-}
-
-impl std::fmt::Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "%{}_{}", self.parent, self.index)
+        tokens.extend(self.to_token_stream_formatted(true));
     }
 }

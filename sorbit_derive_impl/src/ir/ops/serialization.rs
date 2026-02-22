@@ -6,7 +6,7 @@ use crate::ir::constants::{
     BIG_ENDIAN, BIT_FIELD_TYPE, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, ERROR_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT,
     SERIALIZER_TRAIT,
 };
-use crate::ir::dag_v2::{Id, Operation, Region, Value};
+use crate::ir::dag::{Id, Operation, Region, Value};
 
 //------------------------------------------------------------------------------
 // Pad
@@ -112,12 +112,14 @@ impl Operation for AlignOp {
 // Annotate result
 //------------------------------------------------------------------------------
 
+#[allow(unused)]
 struct AnnotateResultOp {
     id: Id,
     result: Value,
     annotation: String,
 }
 
+#[allow(unused)]
 pub fn annotate_result(region: &mut Region, result: Value, annotation: String) -> Value {
     region.push(AnnotateResultOp { id: Id::new(), result, annotation })[0]
 }
@@ -311,7 +313,7 @@ struct DeserializeObjectOp {
     ty: syn::Type,
 }
 
-fn deserialize_object(region: &mut Region, deserializer: Value, ty: syn::Type) -> Value {
+pub fn deserialize_object(region: &mut Region, deserializer: Value, ty: syn::Type) -> Value {
     region.push(DeserializeObjectOp { id: Id::new(), deserializer, ty })[0]
 }
 
@@ -357,7 +359,7 @@ pub struct DeserializeCompositeOp {
     body: Region,
 }
 
-fn deserialize_composite(region: &mut Region, deserializer: Value, body: impl FnOnce(&mut Region, Value)) -> Value {
+pub fn deserialize_composite(region: &mut Region, deserializer: Value, body: impl FnOnce(&mut Region, Value)) -> Value {
     let body = {
         let mut region = Region::new(1);
         let de_inner = region.arguments()[0];
@@ -660,8 +662,7 @@ impl Operation for PackBitFieldOp {
 
     fn attributes(&self) -> Vec<String> {
         vec![
-            self.bits.start.to_string(),
-            self.bits.end.to_string(),
+            format!("{}..{}", self.bits.start, self.bits.end),
             format!("{:?}", self.bit_numbering),
         ]
     }
@@ -672,7 +673,14 @@ impl Operation for PackBitFieldOp {
         let bit_field = &self.bit_field;
         let start = self.bits.start;
         let end = self.bits.end;
-        quote! { #SERIALIZER_TRAIT::pack_bit_field(#serializer, #value, #bit_field, #start, #end) }
+        quote! {
+            {
+                let mut bit_field = #bit_field;
+                bit_field.pack(&#value, #start..#end)
+                          .map_err(|err| ::sorbit::codegen::bit_error_to_error_se(#serializer, err))
+                          .map(|_| bit_field)
+            }
+        }
     }
 }
 
@@ -722,8 +730,7 @@ impl Operation for UnpackBitFieldOp {
     fn attributes(&self) -> Vec<String> {
         vec![
             self.ty.to_token_stream().to_string(),
-            self.bits.start.to_string(),
-            self.bits.end.to_string(),
+            format!("{}..{}", self.bits.start, self.bits.end),
             format!("{:?}", self.bit_numbering),
         ]
     }
@@ -733,6 +740,6 @@ impl Operation for UnpackBitFieldOp {
         let ty = &self.ty;
         let start = self.bits.start;
         let end = self.bits.end;
-        quote! { <#ty as #DESERIALIZE_TRAIT>::unpack_bit_field(#bit_field, #start, #end) }
+        quote! { #bit_field.unpack::<#ty, _, _>(#start..#end).map_err(|err| err.into()) }
     }
 }

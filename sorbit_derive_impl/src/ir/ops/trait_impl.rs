@@ -1,5 +1,8 @@
-use crate::ir::constants::{DESERIALIZE_TRAIT, SERIALIZE_TRAIT};
-use crate::ir::dag_v2::{Id, Operation, Region, Value};
+use crate::ir::constants::{
+    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZE_TRAIT, SERIALIZER_OUTPUT_TRAIT,
+    SERIALIZER_TRAIT, SERIALIZER_TYPE,
+};
+use crate::ir::dag::{Id, Operation, Region, Value};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -7,7 +10,7 @@ use quote::quote;
 // Serialize trait impl
 //------------------------------------------------------------------------------
 
-struct ImplSerializeOp {
+pub struct ImplSerializeOp {
     id: Id,
     name: syn::Ident,
     generics: syn::Generics,
@@ -19,14 +22,14 @@ pub fn impl_serialize(
     name: syn::Ident,
     generics: syn::Generics,
     body: impl FnOnce(&mut Region, Value),
-) -> Value {
+) {
     let body = {
         let mut region = Region::new(1);
         let serializer = region.arguments()[0];
         body(&mut region, serializer);
         region
     };
-    region.push(ImplSerializeOp { id: Id::new(), name, generics, body })[0]
+    region.push(ImplSerializeOp { id: Id::new(), name, generics, body });
 }
 
 impl Operation for ImplSerializeOp {
@@ -43,7 +46,7 @@ impl Operation for ImplSerializeOp {
     }
 
     fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
+        vec![]
     }
 
     fn regions(&self) -> Vec<&Region> {
@@ -58,11 +61,19 @@ impl Operation for ImplSerializeOp {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
         let body = &self.body;
+        let serializer = body.arguments()[0];
 
         quote! {
             #[automatically_derived]
-            impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause {
-                fn serialize(&self, serializer: &mut dyn sorbit::Serializer) -> sorbit::Result<()> {
+            impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause{
+                fn serialize<#SERIALIZER_TYPE: #SERIALIZER_TRAIT>(
+                    &self,
+                    #serializer: &mut #SERIALIZER_TYPE
+                ) -> ::core::result::Result<
+                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Success,
+                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Error
+                    >
+                {
                     #body
                 }
             }
@@ -74,7 +85,7 @@ impl Operation for ImplSerializeOp {
 // Deserialize trait impl
 //------------------------------------------------------------------------------
 
-struct ImplDeserializeOp {
+pub struct ImplDeserializeOp {
     id: Id,
     name: syn::Ident,
     generics: syn::Generics,
@@ -86,14 +97,14 @@ pub fn impl_deserialize(
     name: syn::Ident,
     generics: syn::Generics,
     body: impl FnOnce(&mut Region, Value),
-) -> Value {
+) {
     let body = {
         let mut region = Region::new(1);
         let deserializer = region.arguments()[0];
         body(&mut region, deserializer);
         region
     };
-    region.push(ImplDeserializeOp { id: Id::new(), name, generics, body })[0]
+    region.push(ImplDeserializeOp { id: Id::new(), name, generics, body });
 }
 
 impl Operation for ImplDeserializeOp {
@@ -110,7 +121,7 @@ impl Operation for ImplDeserializeOp {
     }
 
     fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
+        vec![]
     }
 
     fn regions(&self) -> Vec<&Region> {
@@ -125,11 +136,18 @@ impl Operation for ImplDeserializeOp {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
         let body = &self.body;
+        let deserializer = body.arguments()[0];
 
         quote! {
             #[automatically_derived]
-            impl #impl_generics #DESERIALIZE_TRAIT for #name #ty_generics #where_clause {
-                fn deserialize(deserializer: &mut dyn sorbit::Deserializer) -> sorbit::Result<Self> {
+            impl #impl_generics #DESERIALIZE_TRAIT for #name #ty_generics #where_clause{
+                fn deserialize<#DESERIALIZER_TYPE: #DESERIALIZER_TRAIT>(
+                    #deserializer: &mut #DESERIALIZER_TYPE
+                ) -> ::core::result::Result<
+                        Self,
+                        <#DESERIALIZER_TYPE as #DESERIALIZER_TRAIT>::Error
+                    >
+                {
                     #body
                 }
             }

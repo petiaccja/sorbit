@@ -1,4 +1,4 @@
-use crate::ir::dag_v2::{Id, Operation, Region, Value};
+use crate::ir::dag::{Id, Operation, Region, Value};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
@@ -6,7 +6,7 @@ use quote::{ToTokens, quote};
 // Self
 //------------------------------------------------------------------------------
 
-struct SelfOp {
+pub struct SelfOp {
     id: Id,
 }
 
@@ -48,7 +48,7 @@ impl Operation for SelfOp {
 // Ref
 //------------------------------------------------------------------------------
 
-struct RefOp {
+pub struct RefOp {
     id: Id,
     value: Value,
 }
@@ -92,7 +92,7 @@ impl Operation for RefOp {
 // Yield
 //------------------------------------------------------------------------------
 
-struct YieldOp {
+pub struct YieldOp {
     id: Id,
     values: Vec<Value>,
 }
@@ -141,59 +141,10 @@ impl Operation for YieldOp {
 }
 
 //------------------------------------------------------------------------------
-// Execute
-//------------------------------------------------------------------------------
-
-struct ExecuteOp {
-    id: Id,
-    body: Region,
-}
-
-pub fn execute(region: &mut Region, body: impl FnOnce(&mut Region)) -> Value {
-    let body = {
-        let mut region = Region::new(0);
-        body(&mut region);
-        region
-    };
-    region.push(ExecuteOp { id: Id::new(), body })[0]
-}
-
-impl Operation for ExecuteOp {
-    fn name(&self) -> &str {
-        "execute"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let body = &self.body;
-        quote! { #body }
-    }
-}
-
-//------------------------------------------------------------------------------
 // Member
 //------------------------------------------------------------------------------
 
-struct MemberOp {
+pub struct MemberOp {
     id: Id,
     value: Value,
     member: syn::Member,
@@ -228,7 +179,11 @@ impl Operation for MemberOp {
     fn attributes(&self) -> Vec<String> {
         vec![
             self.member.to_token_stream().to_string(),
-            self.reference.to_string(),
+            match self.reference {
+                true => "ref",
+                false => "val",
+            }
+            .to_owned(),
         ]
     }
 
@@ -246,7 +201,7 @@ impl Operation for MemberOp {
 // Try
 //------------------------------------------------------------------------------
 
-struct TryOp {
+pub struct TryOp {
     id: Id,
     value: Value,
 }
@@ -290,7 +245,7 @@ impl Operation for TryOp {
 // Ok
 //------------------------------------------------------------------------------
 
-struct OkOp {
+pub struct OkOp {
     id: Id,
     value: Value,
 }
@@ -334,7 +289,7 @@ impl Operation for OkOp {
 // Tuple
 //------------------------------------------------------------------------------
 
-struct TupleOp {
+pub struct TupleOp {
     id: Id,
     members: Vec<Value>,
 }
@@ -378,7 +333,7 @@ impl Operation for TupleOp {
 // Struct
 //------------------------------------------------------------------------------
 
-struct StructOp {
+pub struct StructOp {
     id: Id,
     ty: syn::Type,
     members: Vec<(syn::Member, Value)>,

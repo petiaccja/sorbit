@@ -1,5 +1,4 @@
 use proc_macro2::TokenStream;
-use quote::ToTokens;
 use syn::DeriveInput;
 
 mod ast;
@@ -7,17 +6,23 @@ mod parse;
 
 use ast::{ToDeserializeOp as _, ToSerializeOp as _};
 
+use crate::ir::dag::Region;
+
 pub struct Struct {
     inner: ast::Struct,
 }
 
 impl Struct {
     pub fn derive_serialize(&self) -> TokenStream {
-        self.inner.to_serialize_op(()).to_token_stream()
+        let mut region = Region::new(0);
+        self.inner.to_serialize_op(&mut region, ());
+        region.to_token_stream_formatted(false)
     }
 
     pub fn derive_deserialize(&self) -> TokenStream {
-        self.inner.to_deserialize_op(()).to_token_stream()
+        let mut region = Region::new(0);
+        self.inner.to_deserialize_op(&mut region, ());
+        region.to_token_stream_formatted(false)
     }
 }
 
