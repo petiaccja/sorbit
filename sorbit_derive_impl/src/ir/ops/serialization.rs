@@ -412,7 +412,7 @@ impl Operation for DeserializeCompositeOp {
 
 struct ByteOrderOp {
     id: Id,
-    deserializer: Value,
+    serializer: Value,
     byte_order: ByteOrder,
     is_serializing: bool,
     body: Region,
@@ -420,7 +420,7 @@ struct ByteOrderOp {
 
 pub fn byte_order(
     region: &mut Region,
-    deserializer: Value,
+    serializer: Value,
     byte_order: ByteOrder,
     is_serializing: bool,
     body: impl FnOnce(&mut Region, Value),
@@ -431,7 +431,7 @@ pub fn byte_order(
         body(&mut region, de_inner);
         region
     };
-    region.push(ByteOrderOp { id: Id::new(), deserializer, byte_order, is_serializing, body })[0]
+    region.push(ByteOrderOp { id: Id::new(), serializer, byte_order, is_serializing, body })[0]
 }
 
 impl Operation for ByteOrderOp {
@@ -444,7 +444,7 @@ impl Operation for ByteOrderOp {
     }
 
     fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer]
+        vec![self.serializer]
     }
 
     fn outputs(&self) -> Vec<Value> {
@@ -461,7 +461,7 @@ impl Operation for ByteOrderOp {
 
     fn to_token_stream(&self) -> TokenStream {
         use crate::attribute::ByteOrder::*;
-        let de = &self.deserializer;
+        let se = &self.serializer;
         let body = &self.body;
         let inner = self.body.arguments()[0];
         let trait_ = match self.is_serializing {
@@ -470,12 +470,12 @@ impl Operation for ByteOrderOp {
         };
         match self.byte_order {
             BigEndian => quote! {
-                #trait_::with_byte_order(#de, #BIG_ENDIAN, |#inner| {
+                #trait_::with_byte_order(#se, #BIG_ENDIAN, |#inner| {
                     #body
                 })
             },
             LittleEndian => quote! {
-                #trait_::with_byte_order(#de, #LITTLE_ENDIAN, |#inner| {
+                #trait_::with_byte_order(#se, #LITTLE_ENDIAN, |#inner| {
                     #body
                 })
             },

@@ -4,6 +4,7 @@ use sorbit::serialize::Serialize;
 use sorbit::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[sorbit(byte_order = big_endian)]
 struct Direct<T: Serialize + Deserialize + PartialEq>(T);
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

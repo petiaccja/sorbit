@@ -4,6 +4,7 @@ use sorbit::serialize::Serialize;
 use sorbit::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[sorbit(byte_order = big_endian)]
 struct Generic<T: Serialize + Deserialize + PartialEq> {
     value: T,
 }

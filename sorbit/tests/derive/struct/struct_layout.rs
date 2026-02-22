@@ -8,7 +8,7 @@ struct Len {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
-#[sorbit(round = 5)]
+#[sorbit(round = 5, byte_order = big_endian)]
 struct Round {
     a: u32,
 }

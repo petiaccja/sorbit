@@ -3,7 +3,7 @@ use sorbit::{Deserialize, Serialize};
 use crate::utility::{from_bytes, to_bytes};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[sorbit(round = 4)]
+#[sorbit(byte_order = big_endian, round = 4)]
 struct IPv4Header {
     #[sorbit(bit_field=_version_ihl, repr=u8, bits=4..8)]
     version: u8,

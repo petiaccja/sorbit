@@ -2,6 +2,7 @@ use crate::utility::{from_bytes, to_bytes};
 use sorbit::{Deserialize, Serialize, bit::Error as BitError, error::Error};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[sorbit(byte_order = big_endian)]
 struct Packing {
     #[sorbit(bit_field=_b, repr=u16, bits=4..10)]
     a: u8,
@@ -10,6 +11,7 @@ struct Packing {
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[sorbit(byte_order = big_endian)]
 struct Layout {
     #[sorbit(bit_field=_b, repr=u16, offset = 2, round = 4, bits=4..10)]
     a: u8,

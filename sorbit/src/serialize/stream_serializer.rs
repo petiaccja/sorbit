@@ -38,7 +38,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// let serializer = StreamSerializer::new(stream).little_endian();
     /// ```
     pub fn new(stream: Stream) -> Self {
-        Self { stream: Some(stream), byte_order: ByteOrder::BigEndian, stream_pos: 0, composite_base: 0 }
+        Self { stream: Some(stream), byte_order: ByteOrder::native(), stream_pos: 0, composite_base: 0 }
     }
 
     /// Create a new serializer that uses the **big endian** byte order.
@@ -49,6 +49,11 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// Create a new serializer that uses the **little endian** byte order.
     pub fn little_endian(self) -> Self {
         Self { byte_order: ByteOrder::LittleEndian, ..self }
+    }
+
+    /// Create a new serializer that uses the specified byte order.
+    pub fn set_byte_order(self, byte_order: ByteOrder) -> Self {
+        Self { byte_order, ..self }
     }
 
     /// Take the serialized bytes from the serializer.
