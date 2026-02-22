@@ -55,6 +55,10 @@ where
         Self { bits, mask: Packed::zero() }
     }
 
+    pub fn bit_size_of(&self) -> usize {
+        bit_size_of::<Packed>()
+    }
+
     pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, to_bits: BitRange) -> Result<(), Error>
     where
         Value: PackInto<Packed>,

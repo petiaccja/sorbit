@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
-use crate::attribute::ByteOrder;
+use crate::attribute::{BitNumbering, ByteOrder};
 use crate::ir::constants::{
     BIG_ENDIAN, BIT_FIELD_TYPE, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, ERROR_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT,
     SERIALIZER_TRAIT,
@@ -625,7 +625,7 @@ struct PackBitFieldOp {
     value: Value,
     bit_field: Value,
     bits: std::ops::Range<u8>,
-    bit_numbering: crate::attribute::BitNumbering,
+    bit_numbering: BitNumbering,
 }
 
 pub fn pack_bit_field(
@@ -634,7 +634,7 @@ pub fn pack_bit_field(
     value: Value,
     bit_field: Value,
     bits: std::ops::Range<u8>,
-    bit_numbering: crate::attribute::BitNumbering,
+    bit_numbering: BitNumbering,
 ) -> Value {
     region.push(PackBitFieldOp { id: Id::new(), serializer, value, bit_field, bits, bit_numbering })[0]
 }
@@ -673,15 +673,26 @@ impl Operation for PackBitFieldOp {
         let bit_field = &self.bit_field;
         let start = self.bits.start;
         let end = self.bits.end;
+        let bit_range = bit_range_to_token_stream(quote! {bit_field}, start, end, self.bit_numbering);
         quote! {
             {
                 let mut bit_field = #bit_field;
-                bit_field.pack(&#value, #start..#end)
+                bit_field.pack(&#value, #bit_range)
                           .map_err(|err| ::sorbit::codegen::bit_error_to_error_se(#serializer, err))
                           .map(|_| bit_field)
             }
         }
     }
+}
+
+fn bit_range_to_token_stream(bit_field: impl ToTokens, start: u8, end: u8, bit_numbering: BitNumbering) -> TokenStream {
+    let bit_range = match bit_numbering {
+        BitNumbering::MSB0 => {
+            quote! { (#bit_field.bit_size_of() as u8 - #end)..(#bit_field.bit_size_of() as u8 - #start) }
+        }
+        BitNumbering::LSB0 => quote! { #start..#end },
+    };
+    bit_range
 }
 
 //------------------------------------------------------------------------------
@@ -693,7 +704,7 @@ struct UnpackBitFieldOp {
     bit_field: Value,
     ty: syn::Type,
     bits: std::ops::Range<u8>,
-    bit_numbering: crate::attribute::BitNumbering,
+    bit_numbering: BitNumbering,
 }
 
 pub fn unpack_bit_field(
@@ -701,7 +712,7 @@ pub fn unpack_bit_field(
     bit_field: Value,
     ty: syn::Type,
     bits: std::ops::Range<u8>,
-    bit_numbering: crate::attribute::BitNumbering,
+    bit_numbering: BitNumbering,
 ) -> Value {
     region.push(UnpackBitFieldOp { id: Id::new(), bit_field, ty, bits, bit_numbering })[0]
 }
@@ -740,6 +751,7 @@ impl Operation for UnpackBitFieldOp {
         let ty = &self.ty;
         let start = self.bits.start;
         let end = self.bits.end;
-        quote! { #bit_field.unpack::<#ty, _, _>(#start..#end).map_err(|err| err.into()) }
+        let bit_range = bit_range_to_token_stream(bit_field, start, end, self.bit_numbering);
+        quote! { #bit_field.unpack::<#ty, _, _>(#bit_range).map_err(|err| err.into()) }
     }
 }

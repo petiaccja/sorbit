@@ -26,7 +26,7 @@ pub enum Field {
         storage_id: Ident,
         storage_ty: Option<Type>,
         byte_order: Option<ByteOrder>,
-        bit_numbering: BitNumbering,
+        bit_numbering: Option<BitNumbering>,
         offset: Option<u64>,
         align: Option<u64>,
         round: Option<u64>,
@@ -113,11 +113,7 @@ impl Field {
             .ok_or(syn::Error::new(ident.span(), MISSING_STORAGE_ID))??;
         let storage_ty = parameters.get(&path::storage_ty()).map(|expr| as_type(expr)).transpose()?;
         let byte_order = parameters.get(&path::byte_order()).map(|expr| as_byte_order(expr)).transpose()?;
-        let bit_numbering = parameters
-            .get(&path::bit_numbering())
-            .map(|expr| as_bit_numbering(expr))
-            .transpose()?
-            .unwrap_or_default();
+        let bit_numbering = parameters.get(&path::bit_numbering()).map(|expr| as_bit_numbering(expr)).transpose()?;
         let offset = parameters.get(&path::offset()).map(|expr| as_literal_int(expr)).transpose()?;
         let align = parameters.get(&path::align()).map(|expr| as_literal_int(expr)).transpose()?;
         let round = parameters.get(&path::round()).map(|expr| as_literal_int(expr)).transpose()?;
@@ -250,7 +246,7 @@ mod tests {
             storage_id: parse_quote!(_bit_field),
             storage_ty: None,
             byte_order: None,
-            bit_numbering: BitNumbering::LSB0,
+            bit_numbering: None,
             offset: None,
             align: None,
             round: None,
@@ -273,7 +269,7 @@ mod tests {
             storage_id: parse_quote!(_bit_field),
             storage_ty: None,
             byte_order: None,
-            bit_numbering: BitNumbering::LSB0,
+            bit_numbering: None,
             offset: None,
             align: None,
             round: None,
@@ -296,7 +292,7 @@ mod tests {
             storage_id: parse_quote!(_bit_field),
             storage_ty: None,
             byte_order: None,
-            bit_numbering: BitNumbering::LSB0,
+            bit_numbering: None,
             offset: None,
             align: None,
             round: None,
@@ -318,7 +314,7 @@ mod tests {
             storage_id: parse_quote!(_bit_field),
             storage_ty: None,
             byte_order: None,
-            bit_numbering: BitNumbering::LSB0,
+            bit_numbering: None,
             offset: Some(1),
             align: Some(2),
             round: Some(3),
@@ -343,7 +339,7 @@ mod tests {
             storage_id: parse_quote!(_bit_field),
             storage_ty: None,
             byte_order: None,
-            bit_numbering: BitNumbering::LSB0,
+            bit_numbering: None,
             offset: Some(1),
             align: Some(2),
             round: Some(3),

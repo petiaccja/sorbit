@@ -103,7 +103,7 @@ pub struct FieldGroupBitItem {
     bits: Range<u8>,
     storage_ty: Option<Type>,
     byte_order: Option<ByteOrder>,
-    bit_numbering: BitNumbering,
+    bit_numbering: Option<BitNumbering>,
     offset: Option<u64>,
     align: Option<u64>,
     round: Option<u64>,
@@ -118,7 +118,7 @@ impl FieldGroup {
             FieldGroup::Bit { ident, items } => {
                 let ty = Self::find_storage_ty(items.iter(), ident.span())?;
                 let byte_order = Self::find_byte_order(items.iter())?;
-                let bit_numbering = Self::find_bit_numbering(items.iter())?;
+                let bit_numbering = Self::find_bit_numbering(items.iter())?.unwrap_or(BitNumbering::LSB0);
                 let offset = Self::find_offset(items.iter())?;
                 let align = Self::find_align(items.iter())?;
                 let round = Self::find_round(items.iter())?;
@@ -144,10 +144,11 @@ impl FieldGroup {
         all_same_or_error(iter, "the byte order of the bit field is redefined with a different value")
     }
 
-    fn find_bit_numbering<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<BitNumbering, syn::Error> {
-        let iter = items.map(|item| (item.bit_numbering, item.member.span()));
+    fn find_bit_numbering<'a>(
+        items: impl Iterator<Item = &'a FieldGroupBitItem>,
+    ) -> Result<Option<BitNumbering>, syn::Error> {
+        let iter = items.filter_map(|item| item.bit_numbering.map(|bit_numbering| (bit_numbering, item.member.span())));
         all_same_or_error(iter, "the bit numbering of the bit field is redefined with a different value")
-            .map(|o| o.unwrap_or_default())
     }
 
     fn find_offset<'a>(items: impl Iterator<Item = &'a FieldGroupBitItem>) -> Result<Option<u64>, syn::Error> {
@@ -207,7 +208,7 @@ mod tests {
                     storage_id: parse_quote!(_bit_field),
                     storage_ty: None,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -239,7 +240,7 @@ mod tests {
                         bits: 0..4,
                         storage_ty: None,
                         byte_order: None,
-                        bit_numbering: BitNumbering::LSB0,
+                        bit_numbering: None,
                         offset: None,
                         align: None,
                         round: None,
@@ -267,7 +268,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -279,7 +280,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -291,7 +292,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -308,7 +309,7 @@ mod tests {
                             bits: 0..4,
                             storage_ty: None,
                             byte_order: None,
-                            bit_numbering: BitNumbering::LSB0,
+                            bit_numbering: None,
                             offset: None,
                             align: None,
                             round: None,
@@ -319,7 +320,7 @@ mod tests {
                             bits: 0..4,
                             storage_ty: None,
                             byte_order: None,
-                            bit_numbering: BitNumbering::LSB0,
+                            bit_numbering: None,
                             offset: None,
                             align: None,
                             round: None,
@@ -334,7 +335,7 @@ mod tests {
                         bits: 0..4,
                         storage_ty: None,
                         byte_order: None,
-                        bit_numbering: BitNumbering::LSB0,
+                        bit_numbering: None,
                         offset: None,
                         align: None,
                         round: None,
@@ -355,7 +356,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -367,7 +368,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -379,7 +380,7 @@ mod tests {
                     storage_ty: None,
                     bits: 0..4,
                     byte_order: None,
-                    bit_numbering: BitNumbering::LSB0,
+                    bit_numbering: None,
                     offset: None,
                     align: None,
                     round: None,
@@ -401,7 +402,7 @@ mod tests {
                 bits: 0..4,
                 storage_ty: None,
                 byte_order: None,
-                bit_numbering: BitNumbering::LSB0,
+                bit_numbering: None,
                 offset: None,
                 align: None,
                 round: None,
