@@ -126,13 +126,13 @@ pub trait Serializer: SerializationOutcome {
     ) -> Result<(Self::Success, Output), Self::Error>;
 }
 
-/// A serializer that can introspect previously serialized objects.
-pub trait Lookback: SerializationOutcome<Success: Span> {
+/// A serializer that can analyze and update previously serialized objects.
+pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// The type of the serializer passed to the update function in
-    /// [`Lookback::update_section`].
-    type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
+    /// [`RevisableSerializer::update_section`].
+    type SectionSerializer: Serializer + RevisableSerializer<Success = Self::Success, Error = Self::Error>;
     /// The type of the stream passed to the analyzer function in
-    /// [`Lookback::analyze_section`].
+    /// [`RevisableSerializer::analyze_section`].
     type SectionReader: Read + Seek;
 
     /// Analyze the byte stream of previously serialized items.
@@ -163,7 +163,7 @@ pub trait Lookback: SerializationOutcome<Success: Span> {
     ///
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
-    /// lengths can be computed by [`Lookback::analyze_section`].
+    /// lengths can be computed by [`RevisableSerializer::analyze_section`].
     fn update_section<Output>(
         &mut self,
         section: &Self::Success,
@@ -183,14 +183,15 @@ pub trait Lookback: SerializationOutcome<Success: Span> {
 /// calculate the checksum, and then the checksum needs to be reserialized.
 ///
 /// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
-/// also implement [`Lookback`] so that you can review and update the serialized
+/// also implement [`RevisableSerializer`] so that you can review and update the serialized
 /// byte stream.
 pub trait MultiPassSerializer:
-    Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
+    Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer> + RevisableSerializer
 {
 }
 
 impl<S> MultiPassSerializer for S where
-    S: Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
+    S: Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer>
+        + RevisableSerializer
 {
 }

@@ -5,5 +5,5 @@ mod serializer;
 mod stream_serializer;
 
 pub use serialize::{MultiPassSerialize, Serialize};
-pub use serializer::{Lookback, MultiPassSerializer, SerializationOutcome, Serializer, Span};
+pub use serializer::{MultiPassSerializer, RevisableSerializer, SerializationOutcome, Serializer, Span};
 pub use stream_serializer::StreamSerializer;
