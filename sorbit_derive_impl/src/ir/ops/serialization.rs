@@ -3,8 +3,8 @@ use quote::{ToTokens, quote};
 
 use crate::attribute::{BitNumbering, ByteOrder};
 use crate::ir::constants::{
-    BIG_ENDIAN, BIT_FIELD_TYPE, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, ERROR_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT,
-    SERIALIZER_TRAIT,
+    BIG_ENDIAN, BIT_FIELD_TYPE, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT,
+    SERIALIZER_TRAIT, TRACE_ERROR_TRAIT,
 };
 use crate::ir::dag::{Id, Operation, Region, Value};
 
@@ -152,7 +152,7 @@ impl Operation for AnnotateResultOp {
     fn to_token_stream(&self) -> TokenStream {
         let result = &self.result;
         let annotation = &self.annotation;
-        quote! { #result.map_err(|err| #ERROR_TRAIT::enclose(err, #annotation)) }
+        quote! { #result.map_err(|err| #TRACE_ERROR_TRAIT::annotate(err, #annotation)) }
     }
 }
 

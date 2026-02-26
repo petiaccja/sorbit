@@ -1,5 +1,6 @@
+use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::SerializeError;
+use crate::error::TraceError;
 use crate::io::{Read, Seek};
 
 /// The section of the byte stream where a serialized object resides.
@@ -21,7 +22,7 @@ pub trait SerializerOutput {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
-    type Error: SerializeError;
+    type Error: TraceError + From<BitError>;
 }
 
 /// Serializers can transform primitive types into a stream of bytes that can

@@ -3,7 +3,7 @@ use quote::{ToTokens, quote};
 pub struct BitFieldType;
 
 #[allow(unused)]
-pub struct ErrorTrait;
+pub struct TraceErrorTrait;
 
 pub struct SerializerTrait;
 pub struct SerializerOutputTrait;
@@ -20,7 +20,7 @@ pub struct LittleEndian;
 pub const BIT_FIELD_TYPE: BitFieldType = BitFieldType {};
 
 #[allow(unused)]
-pub const ERROR_TRAIT: ErrorTrait = ErrorTrait {};
+pub const TRACE_ERROR_TRAIT: TraceErrorTrait = TraceErrorTrait {};
 
 pub const SERIALIZER_TRAIT: SerializerTrait = SerializerTrait {};
 pub const SERIALIZER_OUTPUT_TRAIT: SerializerOutputTrait = SerializerOutputTrait {};
@@ -40,9 +40,9 @@ impl ToTokens for BitFieldType {
     }
 }
 
-impl ToTokens for ErrorTrait {
+impl ToTokens for TraceErrorTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::error::SerializeError});
+        tokens.extend(quote! {::sorbit::error::TraceError});
     }
 }
 
