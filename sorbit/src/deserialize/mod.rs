@@ -1,3 +1,5 @@
+//! Deserialization traits and deserializers.
+
 mod deserialize;
 mod deserializer;
 mod stream_deserializer;

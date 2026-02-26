@@ -3,6 +3,14 @@ name = "sorbit"
 version = "0.1.0"
 edition = "2024"
 
+license = "MIT"
+description = "A serialization framework to define bit-accurate binary formats."
+homepage = "https://github.com/petiaccja/sorbit"
+repository = "https://github.com/petiaccja/sorbit"
+readme = "../README.md"
+keywords = ["binary", "serialization", "layout", "bitfield"]
+categories = ["encoding"]
+
 [features]
 alloc = []
 std = ["alloc"]

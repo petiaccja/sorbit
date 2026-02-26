@@ -3,6 +3,12 @@ name = "sorbit_derive_impl"
 version = "0.1.0"
 edition = "2024"
 
+license = "MIT"
+description = "The derive macros for the sorbit serialization framework."
+homepage = "https://github.com/petiaccja/sorbit"
+repository = "https://github.com/petiaccja/sorbit"
+readme = "README.md"
+
 [dependencies]
 proc-macro2 = "1.0.101"
 quote = "1.0.40"

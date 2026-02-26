@@ -1,10 +1,17 @@
-use crate::io::{PartialStream, Read, Seek, SeekFrom, Write};
+use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
 use crate::serialize::serializer::{Lookback, SerializerOutput};
 
 use super::Serializer;
 use crate::byte_order::ByteOrder;
 use crate::error::{Error, ErrorKind};
 
+/// A [`Serializer`] that works with any [`Write`]-able stream.
+///
+/// The stream can be anything, a file, a TCP stream, or an in-memory
+/// buffer.
+///
+/// For streams that also implement both [`Read`] and [`Seek`], the serializer
+/// is also a [`sorbit::serialize::DeferredSerializer`].
 pub struct StreamSerializer<Stream: Write> {
     stream: Option<Stream>,
     byte_order: ByteOrder,
@@ -206,8 +213,8 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
 }
 
 impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
-    type SectionSerializer = StreamSerializer<PartialStream<Stream>>;
-    type SectionReader = PartialStream<Stream>;
+    type SectionSerializer = StreamSerializer<StreamSection<Stream>>;
+    type SectionReader = StreamSection<Stream>;
 
     fn update_section<Output>(
         &mut self,
@@ -217,7 +224,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
         let range = &section.0;
         let stream_pos = self.stream.as_mut().expect(UNWRAP_STREAM_MSG).stream_position()?;
         let stream = self.stream.take().expect(UNWRAP_STREAM_MSG);
-        let partial_stream = match PartialStream::new(stream, range.clone()) {
+        let partial_stream = match StreamSection::new(stream, range.clone()) {
             Ok(partial_stream) => partial_stream,
             Err(stream) => {
                 self.stream.replace(stream);
@@ -243,7 +250,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
         let range = &section.0;
         let stream_pos = self.stream.as_mut().expect(UNWRAP_STREAM_MSG).stream_position()?;
         let stream = self.stream.take().expect(UNWRAP_STREAM_MSG);
-        let mut partial_stream = match PartialStream::new(stream, range.clone()) {
+        let mut partial_stream = match StreamSection::new(stream, range.clone()) {
             Ok(partial_stream) => partial_stream,
             Err(stream) => {
                 self.stream.replace(stream);

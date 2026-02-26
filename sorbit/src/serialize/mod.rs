@@ -1,3 +1,5 @@
+//! Serialization traits and serializers.
+
 mod serialize;
 mod serializer;
 mod stream_serializer;
