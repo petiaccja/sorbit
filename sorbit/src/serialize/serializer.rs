@@ -108,8 +108,7 @@ pub trait Serializer: SerializerOutput {
     ///
     /// ## Returned value
     ///
-    /// For deferred serializers, the [`Span`] for the entire composite is
-    /// returned on success.
+    /// A tuple of the [`Span`] of the entire composite and the output of `serialize_members`.
     fn serialize_composite<Output>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
@@ -171,7 +170,7 @@ pub trait Lookback: SerializerOutput<Success: Span> {
     ) -> Result<Output, Self::Error>;
 }
 
-/// A deferred serializer is a special [`Serializer`] that can look back at the
+/// A multi-pass serializer is a special [`Serializer`] that can look back at the
 /// previously serialized bytes and change them.
 ///
 /// Some types cannot be serialized in a single pass. Think about the IHL and
@@ -182,15 +181,15 @@ pub trait Lookback: SerializerOutput<Success: Span> {
 /// needed, looking back at the entire byte span of the serialized header to
 /// calculate the checksum, and then the checksum needs to be reserialized.
 ///
-/// In addition to the regular [`Serializer`] methods, `DeferredSerializer`s
+/// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
 /// also implement [`Lookback`] so that you can review and update the serialized
 /// byte stream.
-pub trait DeferredSerializer:
+pub trait MultiPassSerializer:
     Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
 {
 }
 
-impl<S> DeferredSerializer for S where
+impl<S> MultiPassSerializer for S where
     S: Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
 {
 }

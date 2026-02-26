@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind};
 /// buffer.
 ///
 /// For streams that also implement both [`Read`] and [`Seek`], the serializer
-/// is also a [`sorbit::serialize::DeferredSerializer`].
+/// is also a [`sorbit::serialize::MultiPassSerializer`].
 pub struct StreamSerializer<Stream: Write> {
     stream: Option<Stream>,
     byte_order: ByteOrder,

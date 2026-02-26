@@ -1,4 +1,4 @@
-use crate::serialize::DeferredSerializer;
+use crate::serialize::MultiPassSerializer;
 
 use super::Serializer;
 
@@ -19,14 +19,14 @@ pub trait Serialize {
     fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
 
-/// The type can be serialized into a [`DeferredSerializer`].
+/// The type can be serialized into a [`MultiPassSerializer`].
 ///
 /// This trait is analogous to [`Serialize`], but is meant for types that require
-/// the extra features provided by deferred serializers. See [`Serialize`] for
+/// the extra features provided by multi-pass serializers. See [`Serialize`] for
 /// more information.
-pub trait DeferredSerialize {
+pub trait MultiPassSerialize {
     /// Try to serialize this object into the `serializer`.
     ///
     /// See [`Serialize::serialize`] for more information.
-    fn serialize<S: DeferredSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
+    fn serialize<S: MultiPassSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
