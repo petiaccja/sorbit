@@ -1,4 +1,4 @@
-use crate::serialize::MultiPassSerializer;
+use crate::ser_de::MultiPassSerializer;
 
 use super::Serializer;
 

@@ -1,9 +1,9 @@
 use sorbit::byte_order::ByteOrder;
-use sorbit::deserialize::{Deserialize, Deserializer, StreamDeserializer};
 use sorbit::error::Error;
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::serialize::{MultiPassSerialize, MultiPassSerializer, Serialize, Serializer, Span, StreamSerializer};
+use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Serializer, Span};
+use sorbit::stream_ser_de::{StreamDeserializer, StreamSerializer};
 use sorbit::unpack_bit_field;
 
 #[derive(Debug, PartialEq, Eq)]

@@ -1,5 +1,4 @@
-use crate::deserialize::{Deserialize, Deserializer};
-use crate::serialize::{Serialize, Serializer};
+use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer};
 
 macro_rules! impl_serialize {
     ($type:ty, $func:ident) => {

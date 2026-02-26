@@ -1,8 +1,8 @@
 use crate::{
     byte_order::ByteOrder,
-    deserialize::Deserializer,
     error::{Error, ErrorKind},
     io::Read,
+    ser_de::Deserializer,
 };
 
 /// A [`Deserializer`] that works with any [`Read`]-able stream.
@@ -33,7 +33,7 @@ impl<Stream: Read> StreamDeserializer<Stream> {
     /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
     /// [`Self::little_endian`] functions to set a specific byte order:
     /// ```
-    /// # use sorbit::deserialize::StreamDeserializer;
+    /// # use sorbit::stream_ser_de::StreamDeserializer;
     /// # use sorbit::io::GrowingMemoryStream;
     /// # let stream = GrowingMemoryStream::new();
     /// let serializer = StreamDeserializer::new(stream).little_endian();

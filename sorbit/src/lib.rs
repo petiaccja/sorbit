@@ -8,11 +8,11 @@
 //! ## Serializing data structures
 //!
 //! Like other serialization frameworks, sorbit comes with the derive macros
-//! [`Serialize`] and [`Deserialize`] to implement the [`serialize::Serialize`]
-//! and [`deserialize::Deserialize`] traits, but you can also manually implement
+//! [`Serialize`] and [`Deserialize`] to implement the [`ser_de::Serialize`]
+//! and [`ser_de::Deserialize`] traits, but you can also manually implement
 //! these traits. Once implemented for your data structures, you can serialize
-//! them using a [`serialize::Serializer`] and deserialize them using a
-//! [`deserialize::Deserializer`].
+//! them using a [`ser_de::Serializer`] and deserialize them using a
+//! [`ser_de::Deserializer`].
 //!
 //! Example:
 //! ```
@@ -26,8 +26,8 @@
 //! ```
 //!
 //! While you can implement the serializer
-//! traits yourself, sorbit already comes with the [`serialize::StreamSerializer`]
-//! and [`deserialize::StreamDeserializer`] objects. These provide an abstraction
+//! traits yourself, sorbit already comes with the [`stream_ser_de::StreamSerializer`]
+//! and [`stream_ser_de::StreamDeserializer`] objects. These provide an abstraction
 //! over streams (like files or in-memory buffers). For general use, sorbit
 //! gives you the [`io::GrowingMemoryStream`], and for use in `no_std` environments,
 //! you have the [`io::FixedMemoryStream`].
@@ -43,8 +43,8 @@
 //! # }
 //! #
 //! use sorbit::io::GrowingMemoryStream;
-//! use sorbit::serialize::StreamSerializer;
-//! use sorbit::serialize::Serialize as _;
+//! use sorbit::stream_ser_de::StreamSerializer;
+//! use sorbit::ser_de::Serialize as _;
 //!
 //! let data = Data{ field: 345 };
 //! let mut serializer = StreamSerializer::new(GrowingMemoryStream::new());
@@ -129,9 +129,9 @@
 //! ## Implementing custom serializers
 //!
 //! You can implement your own serializers via manually implementing the
-//! [`serialize::Serializer`] and [`deserialize::Deserializer`] traits.
-//! There is little reason to this, because the [`serialize::StreamSerializer`]
-//! and [`deserialize::StreamDeserializer`] implementations can serialize into
+//! [`ser_de::Serializer`] and [`ser_de::Deserializer`] traits.
+//! There is little reason to this, because the [`stream_ser_de::StreamSerializer`]
+//! and [`stream_ser_de::StreamDeserializer`] implementations can serialize into
 //! any binary stream, so they cover almost all the use cases. Instead, you
 //! would typically implement the [`io::Read`], [`io::Write`], and [`io::Seek`]
 //! traits for your stream, and then you can use them through the aforementioned
@@ -163,11 +163,11 @@ extern crate alloc;
 
 pub mod bit;
 pub mod byte_order;
-pub mod deserialize;
 pub mod error;
 pub mod io;
-pub mod serialize;
+pub mod ser_de;
 pub use sorbit_derive::{Deserialize, Serialize};
+pub mod stream_ser_de;
 
 mod types;
 
