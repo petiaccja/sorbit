@@ -1,3 +1,5 @@
+#![warn(missing_docs)]
+
 //! # Sorbit
 //!
 //! Sorbit is a framework for serializing and deserializing data structures in
@@ -161,7 +163,6 @@ extern crate alloc;
 
 pub mod bit;
 pub mod byte_order;
-pub mod codegen;
 pub mod deserialize;
 pub mod error;
 pub mod io;

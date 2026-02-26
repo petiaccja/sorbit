@@ -2,6 +2,15 @@ use super::basic_stream::{Read, Seek, SeekFrom, Write};
 use crate::error::{Error, ErrorKind};
 use alloc::vec::Vec;
 
+/// A stream with an in-memory buffer that grows on demand.
+///
+/// There is no limit on the maximum size of the memory stream.
+/// It's essentially a [`Vec`] on which you keep pulling [`Vec::push`].
+///
+/// Keep in mind that you can seek past the size of the current size of the
+/// internal buffer. Attempting to read the stream there will result in an error,
+/// but writing the stream is valid and it will pad the buffer with zeros all the
+/// way to the cursor. The memory usage will also experience a jump.
 #[derive(Debug)]
 pub struct GrowingMemoryStream {
     buffer: Vec<u8>,
@@ -9,10 +18,12 @@ pub struct GrowingMemoryStream {
 }
 
 impl GrowingMemoryStream {
+    /// Create a stream with a zero-sized buffer.
     pub fn new() -> Self {
         Self { buffer: Vec::new(), stream_pos: 0 }
     }
 
+    /// Take the buffer of the stream.
     pub fn take(self) -> Vec<u8> {
         self.buffer
     }

@@ -62,7 +62,7 @@ impl ToSerializeOp for Field {
                 for member in members {
                     let object = ops::member(region, self_, member.member.clone(), true);
                     let maybe_new_bit_field =
-                        pack_bit_field(region, serializer, object, bit_field, member.bits.clone(), *bit_numbering);
+                        pack_bit_field(region, object, bit_field, member.bits.clone(), *bit_numbering);
                     bit_field = try_(region, maybe_new_bit_field);
                 }
 
@@ -467,11 +467,11 @@ mod tests {
             %bf0 = empty_bit_field [u16]
             
             %foo = member [foo, ref] %self
-            %maybe_bf1 = pack_bit_field [4..7, LSB0] %serializer %foo %bf0
+            %maybe_bf1 = pack_bit_field [4..7, LSB0] %foo %bf0
             %bf1 = try %maybe_bf1
 
             %bar = member [bar, ref] %self
-            %maybe_bf2 = pack_bit_field [0..4, LSB0] %serializer %bar %bf1
+            %maybe_bf2 = pack_bit_field [0..4, LSB0] %bar %bf1
             %bf2 = try %maybe_bf2
 
             %raw = into_raw_bits %bf2

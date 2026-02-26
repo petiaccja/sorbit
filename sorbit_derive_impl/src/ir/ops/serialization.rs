@@ -621,7 +621,6 @@ impl Operation for IntoRawBitsOp {
 
 struct PackBitFieldOp {
     id: Id,
-    serializer: Value,
     value: Value,
     bit_field: Value,
     bits: std::ops::Range<u8>,
@@ -630,13 +629,12 @@ struct PackBitFieldOp {
 
 pub fn pack_bit_field(
     region: &mut Region,
-    serializer: Value,
     value: Value,
     bit_field: Value,
     bits: std::ops::Range<u8>,
     bit_numbering: BitNumbering,
 ) -> Value {
-    region.push(PackBitFieldOp { id: Id::new(), serializer, value, bit_field, bits, bit_numbering })[0]
+    region.push(PackBitFieldOp { id: Id::new(), value, bit_field, bits, bit_numbering })[0]
 }
 
 impl Operation for PackBitFieldOp {
@@ -649,7 +647,7 @@ impl Operation for PackBitFieldOp {
     }
 
     fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer, self.value, self.bit_field]
+        vec![self.value, self.bit_field]
     }
 
     fn outputs(&self) -> Vec<Value> {
@@ -668,7 +666,6 @@ impl Operation for PackBitFieldOp {
     }
 
     fn to_token_stream(&self) -> TokenStream {
-        let serializer = &self.serializer;
         let value = &self.value;
         let bit_field = &self.bit_field;
         let start = self.bits.start;
@@ -678,7 +675,7 @@ impl Operation for PackBitFieldOp {
             {
                 let mut bit_field = #bit_field;
                 bit_field.pack(&#value, #bit_range)
-                          .map_err(|err| ::sorbit::codegen::bit_error_to_error_se(#serializer, err))
+                          .map_err(|err| err.into())
                           .map(|_| bit_field)
             }
         }

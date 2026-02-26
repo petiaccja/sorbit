@@ -1,6 +1,11 @@
 use super::basic_stream::{Read, Seek, SeekFrom, Write};
 use crate::error::{Error, ErrorKind};
 
+/// A stream with an in-memory buffer that has a fixed size.
+///
+/// You may pass a vector, an in-memory slice, or a memory mapped file, mutable or not.
+/// The size of the buffer will never be changed, even if the type you passed is
+/// resizable. Reads and writes outside the buffer will result in an error.
 #[derive(Debug)]
 pub struct FixedMemoryStream<Buffer> {
     buffer: Buffer,
@@ -8,6 +13,7 @@ pub struct FixedMemoryStream<Buffer> {
 }
 
 impl<Buffer> FixedMemoryStream<Buffer> {
+    /// Create a stream from the given buffer.
     pub fn new(buffer: Buffer) -> Self {
         Self { buffer, stream_pos: 0 }
     }

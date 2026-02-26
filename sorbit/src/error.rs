@@ -1,9 +1,13 @@
+//! The error types for sorbit's builtin serializer implementations.
+
 use crate::bit::Error as BitError;
 #[cfg(feature = "alloc")]
 use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
+/// The cause of the error that occured during serialization.
+#[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
     LengthExceedsPadding,
@@ -14,12 +18,14 @@ pub enum ErrorKind {
     IO(std::io::ErrorKind),
 }
 
+/// The cause and location of the error that occured during serialization.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     kind: ErrorKind,
     item: Item,
 }
 
+/// The location of the error that occured during serialization.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Item {
     #[cfg(not(feature = "alloc"))]
@@ -28,10 +34,13 @@ pub struct Item {
     path: Vec<String>,
 }
 
+/// Enable errors to trace the serialized data structure's hierarchy.
 pub trait SerializeError: Sized + From<BitError> {
+    /// Annotate the error with the member/item that's being serialized.
     #[cfg(not(feature = "alloc"))]
     fn enclose(self, ident: &'static str) -> Self;
 
+    /// Annotate the error with the member/item that's being serialized.
     #[cfg(feature = "alloc")]
     fn enclose(self, ident: &str) -> Self;
 }
@@ -109,21 +118,25 @@ impl From<std::io::Error> for ErrorKind {
 //------------------------------------------------------------------------------
 
 impl Item {
+    /// Check if there are any member/item annotations recorded.
     #[cfg(not(feature = "alloc"))]
     pub fn is_empty(&self) -> bool {
         self.name.is_some()
     }
 
+    /// Check if there are any member/item annotations recorded.
     #[cfg(feature = "alloc")]
     pub fn is_empty(&self) -> bool {
         self.path.is_empty()
     }
 
+    /// Annotate the item with the member/item that's being serialized.
     #[cfg(not(feature = "alloc"))]
     pub fn enclose(self, ident: &'static str) -> Self {
         Self { name: Some(self.name.unwrap_or(ident)) }
     }
 
+    /// Annotate the item with the member/item that's being serialized.
     #[cfg(feature = "alloc")]
     pub fn enclose(mut self, ident: &str) -> Self {
         self.path.push(ident.into());

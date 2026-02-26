@@ -5,6 +5,10 @@ use crate::{
     io::Read,
 };
 
+/// A [`Deserializer`] that works with any [`Read`]-able stream.
+///
+/// The stream can be anything, a file, a TCP stream, or an in-memory
+/// buffer.
 pub struct StreamDeserializer<Stream: Read> {
     stream: Option<Stream>,
     byte_order: ByteOrder,

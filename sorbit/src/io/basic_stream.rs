@@ -23,8 +23,11 @@ pub trait Write {
 /// Use by the [`Seek`] trait. Mimics [`std::io::Seek`], see its documentation
 /// for more information.
 pub enum SeekFrom {
+    /// Seek this many bytes from the beginning of the stream.
     Start(u64),
+    /// Seek this many bytes from the end of the stream.
     End(i64),
+    /// Seek this many bytes from the current stream position.
     Current(i64),
 }
 
@@ -34,12 +37,20 @@ pub enum SeekFrom {
 /// traits aren't available in `core`. This trait mimics [`std::io::Seek`], see
 /// its documentation for more information.
 pub trait Seek {
+    /// Seek to a byte offset in the stream. The seek mode and amount is given by `pos`.
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error>;
 
+    /// Seek the stream to its beginning.
     fn rewind(&mut self) -> Result<(), Error> {
         self.seek(SeekFrom::Start(0)).map(|_| ())
     }
 
+    /// Return the length of the stream.
+    ///
+    /// Unless optimized by the stream, it will attempt to seek to the end of
+    /// the stream, read the position, and then seek back to the original
+    /// position. A failure this might leave the stream's current position
+    /// changed.
     fn stream_len(&mut self) -> Result<u64, Error> {
         let original_pos = self.stream_position()?;
         let end_pos = self.seek(SeekFrom::End(0))?;
@@ -47,16 +58,20 @@ pub trait Seek {
         Ok(end_pos)
     }
 
+    /// Return the read/write cursor's current byte offset.
     fn stream_position(&mut self) -> Result<u64, Error> {
         self.seek(SeekFrom::Current(0))
     }
 
+    /// Seek relative to the current stream position.
     fn seek_relative(&mut self, offset: i64) -> Result<(), Error> {
         self.seek(SeekFrom::Current(offset)).map(|_| ())
     }
 }
 
 impl SeekFrom {
+    /// Given the current stream position and stream length, determine where
+    /// the cursor will would be after this seek.
     pub fn absolute(&self, stream_pos: u64, stream_len: u64) -> i64 {
         match self {
             SeekFrom::Start(offset) => *offset as i64,

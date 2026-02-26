@@ -6,21 +6,53 @@ use crate::bit::Error;
 use super::bit_pack::{PackInto, UnpackFrom};
 use super::bit_util::{bit_size_of, keep_lowest_n_bits};
 
+/// A bit field whose members are defined at runtime.
+///
+/// Unlike traditional bit fields that define a fixed set of members with
+/// their bit width and offset at compile time, this data structure works
+/// entirely at runtime, and can therefore represent any bit field. You can
+/// start with an empty bit field via [`Self::new`], and then use [`Self::pack`]
+/// to add the members. You can extract a member via [`Self::unpack`].
+///
+/// To check for overwriting the same bits when adding a new member, the [`BitField`]
+/// stores a mask internally. The affected bits of the mask are set to 1 when a
+/// new member is added via [`Self::pack`]. The next time the same bits are written,
+/// an error is raised.
+///
+/// # Generic parameters
+///
+/// - `Packed`: the underlying type of the bit field. For example, when all the
+///   members of the bit field span 16 bits together, a `u16` could be used for
+///   `Packed`, although anything larger than that, such as a `u32`, would work
+///   too.
 pub struct BitField<Packed: PrimInt>
 where
     Packed: PrimInt + BitOrAssign,
-    u64: PackInto<Packed>,
 {
     bits: Packed,
     mask: Packed,
 }
 
+/// Create a bit field from all of its members in one step.
+///
+/// # Example
+///
+/// ```
+/// use sorbit::pack_bit_field;
+///
+/// let bit_field = pack_bit_field!(u16 => {
+///     (3u8, 3..6),
+///     (4u8, 11..15)
+/// })?;
+/// assert_eq!(bit_field, 0b0010_0000_0001_1000);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[macro_export]
 macro_rules! pack_bit_field {
-    ($packed_ty:ty => { $(($value:expr, $to_bits:expr)),*}) => {
+    ($packed_ty:ty => { $(($value:expr, $target_bits:expr)),*}) => {
         {
             let mut bit_field = ::sorbit::bit::BitField::<$packed_ty>::new();
-            let results = [$(bit_field.pack($value, $to_bits),)*];
+            let results = [$(bit_field.pack($value, $target_bits),)*];
             if let ::core::option::Option::Some(::core::result::Result::Err(err)) = results.into_iter().find(|result| result.is_err()) {
                 Err(err)
             } else {
@@ -30,13 +62,28 @@ macro_rules! pack_bit_field {
     };
 }
 
+/// Deconstruct a bit field into its members in a single step.
+///
+/// # Example
+///
+/// ```
+/// use sorbit::unpack_bit_field;
+///
+/// let (a, b) = unpack_bit_field!(0b0010_0000_0001_1000u16 => {
+///     (u8, 3..6),
+///     (u8, 11..15)
+/// })?;
+/// assert_eq!(a, 3u8);
+/// assert_eq!(b, 4u8);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[macro_export]
 macro_rules! unpack_bit_field {
-    ($bit_field:expr => { $(($self_ty:ty, $to_bits:expr)),*}) => {
+    ($bit_field:expr => { $(($member_ty:ty, $source_bits:expr)),*}) => {
         {
             let bit_field = ::sorbit::bit::BitField::from_bits($bit_field);
-            move || -> ::core::result::Result<($($self_ty,)*), ::sorbit::bit::Error> {
-                ::core::result::Result::Ok(($(bit_field.unpack::<$self_ty, _, _>($to_bits)?,)*))
+            move || -> ::core::result::Result<($($member_ty,)*), ::sorbit::bit::Error> {
+                ::core::result::Result::Ok(($(bit_field.unpack::<$member_ty, _, _>($source_bits)?,)*))
             }()
         }
     };
@@ -47,25 +94,43 @@ where
     Packed: PrimInt + BitOrAssign,
     u64: PackInto<Packed>,
 {
+    /// Create a new bit field all bits set to zero and the mask set to zero as well.
     pub fn new() -> Self {
         Self { bits: Packed::zero(), mask: Packed::zero() }
     }
 
+    /// Create a new bit field from the given bits, with the mask set to all zeros.
     pub fn from_bits(bits: Packed) -> Self {
         Self { bits, mask: Packed::zero() }
     }
 
+    /// The size of the bit field's underlying type in bits.
     pub fn bit_size_of(&self) -> usize {
         bit_size_of::<Packed>()
     }
 
-    pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, to_bits: BitRange) -> Result<(), Error>
+    /// Add a new member to the bit field.
+    ///
+    /// If not all bits of the mask at the target bits are zero, an error is
+    /// raised. Otherwise, all bits of the mask are set to one, marking those bits
+    /// as occupied, raising an error next to you attempt to write them.
+    ///
+    /// [`PackInto::pack_into`] is used to first convert `value` into its arbitrary
+    /// width representation. (The width of derived from `target_bits`.) Then, the
+    /// packed bits are copied into the bit field at `target_bits`.
+    ///
+    /// # Parameters
+    ///
+    /// - `value`: the bits of the new member.
+    /// - `target_bits`: the bit range where the new member is inserted. The least
+    ///   significant bit is numbered zero (LSB0).
+    pub fn pack<Value, BitRange, BitScalar>(&mut self, value: Value, target_bits: BitRange) -> Result<(), Error>
     where
         Value: PackInto<Packed>,
         BitRange: RangeBounds<BitScalar>,
         BitScalar: Add + Into<i64> + Clone,
     {
-        let to_bits = reduce_range(&to_bits, &Self::space());
+        let to_bits = reduce_range(&target_bits, &Self::space());
         Self::validate_range(&to_bits)?;
         let num_bits = (to_bits.end - to_bits.start) as usize;
         let mask_bits: Packed =
@@ -83,18 +148,34 @@ where
         Ok(())
     }
 
-    pub fn unpack<Value, BitRange, BitScalar>(&self, from_bits: BitRange) -> Result<Value, Error>
+    /// Read a member of the bit field.
+    ///
+    /// This does not check the mask and the member will be read as long as the
+    /// source bits do not fall outside the bit field.
+    ///
+    /// First, the arbitrary width representation is obtained by extracting the bits
+    /// from the bit field at `source_bits`. Then, [`UnpackFrom::unpack_from`] is
+    /// used to convert the arbitrary width bits to the output type.
+    ///
+    /// # Parameters
+    ///
+    /// - `source_bits`: the bit range where the member to read resides. The least
+    ///   significant bit is numbered zero (LSB0).
+    pub fn unpack<Value, BitRange, BitScalar>(&self, source_bits: BitRange) -> Result<Value, Error>
     where
         Value: UnpackFrom<Packed>,
         BitRange: RangeBounds<BitScalar>,
         BitScalar: Add + Into<i64> + Clone,
     {
-        let from_bits = reduce_range(&from_bits, &Self::space());
+        let from_bits = reduce_range(&source_bits, &Self::space());
         Self::validate_range(&from_bits)?;
         let num_bits = (from_bits.end - from_bits.start) as usize;
         Value::unpack_from(self.bits >> from_bits.start as usize, num_bits).map_err(|_| Error::TooManyBits)
     }
 
+    /// Convert the bit field to its underlying type.
+    ///
+    /// The mask is dropped.
     pub fn into_bits(self) -> Packed {
         self.bits
     }

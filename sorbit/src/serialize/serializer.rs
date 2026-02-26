@@ -2,31 +2,36 @@ use crate::byte_order::ByteOrder;
 use crate::error::SerializeError;
 use crate::io::{Read, Seek};
 
-/// The section of the byte stream where a serialized object resized.
+/// The section of the byte stream where a serialized object resides.
 ///
 /// For example, for the [IPv4 header](https://en.wikipedia.org/wiki/IPv4#Header),
 /// the section that belongs to *Time to Live* would be bytes 8 to 9 (non-inclusive).
 pub trait Span {
+    /// Return the length of the span in bytes.
     fn len(&self) -> u64;
+    /// Return the byte offset into the stream where the span starts. Inclusive.
     fn start(&self) -> u64;
+    /// Return the byte offset into the stream where the span ends. Exclusive.
     fn end(&self) -> u64;
 }
 
 /// A helper trait to define the types a [`Serializer`] returns on success
 /// and error.
 pub trait SerializerOutput {
+    /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
+    /// The type a [`Serializer`] returns if serialization failed.
     type Error: SerializeError;
 }
 
 /// Serializers can transform primitive types into a stream of bytes that can
 /// be sent over the network or stored in files.
 pub trait Serializer: SerializerOutput {
-    /// The type of the serialized passed to the member serializer in
+    /// The type of the serializer passed to the member serializer in
     /// [`Serializer::serialize_composite`].
     type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
-    /// The type of the serialized passed to the member serializer in
+    /// The type of the serializer passed to the member serializer in
     /// [`Serializer::with_byte_order`].
     type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
@@ -63,17 +68,18 @@ pub trait Serializer: SerializerOutput {
 
     /// Serialize an [`u8`] array.
     ///
-    /// The size of the array should **not** be serialized for serializers that aim
-    /// to support bit-exact representations. The caller is expected to
-    /// deserialize knowing the array's size at compilation time.
+    /// The size of the array should **not** be stored in the byte stream
+    /// for serializers that aim to support bit-exact representations.
+    /// The caller is expected to deserialize knowing the array's size
+    /// at compilation time.
     fn serialize_array<const N: usize>(&mut self, value: &[u8; N]) -> Result<Self::Success, Self::Error>;
 
     /// Serialize an [`u8`] slice.
     ///
-    /// The size of the slice should **not** be serialized for serializers that aim
-    /// to support bit-exact representations. The caller is expected to serialize
-    /// the size separately as it's represented in the serialized data structure's
-    /// specification.
+    /// The size of the slice should **not** be stored in the byte stream for
+    /// serializers that aim to support bit-exact representations. The caller
+    /// is expected to serialize the size separately as it's represented in the
+    /// serialized data structure's specification.
     fn serialize_slice(&mut self, value: &[u8]) -> Result<Self::Success, Self::Error>;
 
     /// Pad with zeros up to `until`, which is interpreted from the beginning
@@ -122,7 +128,11 @@ pub trait Serializer: SerializerOutput {
 
 /// A serializer that can introspect previously serialized objects.
 pub trait Lookback: SerializerOutput<Success: Span> {
+    /// The type of the serializer passed to the update function in
+    /// [`Lookback::update_section`].
     type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
+    /// The type of the stream passed to the analyzer function in
+    /// [`Lookback::analyze_section`].
     type SectionReader: Read + Seek;
 
     /// Analyze the byte stream of previously serialized items.
@@ -161,6 +171,20 @@ pub trait Lookback: SerializerOutput<Success: Span> {
     ) -> Result<Output, Self::Error>;
 }
 
+/// A deferred serializer is a special [`Serializer`] that can look back at the
+/// previously serialized bytes and change them.
+///
+/// Some types cannot be serialized in a single pass. Think about the IHL and
+/// the checksum fields in the IPv4 header. In the first pass, you need to
+/// serialize the header with IHL and checksum set to zero. In the second pass,
+/// you need to look back at the entire serialized header to determine its length
+/// in bytes, and reserialize the IHL accordingly. After this, a third pass is
+/// needed, looking back at the entire byte span of the serialized header to
+/// calculate the checksum, and then the checksum needs to be reserialized.
+///
+/// In addition to the regular [`Serializer`] methods, `DeferredSerializer`s
+/// also implement [`Lookback`] so that you can review and update the serialized
+/// byte stream.
 pub trait DeferredSerializer:
     Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
 {

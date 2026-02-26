@@ -3,19 +3,33 @@ use core::ops::Range;
 use crate::error::{Error, ErrorKind};
 use crate::io::{Read, Seek, SeekFrom, Write};
 
+/// A section of another stream.
+///
+/// A stream section can be used to limit operation only to a part of a stream.
+/// For example, you might have a stream that is 1000 bytes long, however, you
+/// want to avoid modifying anything but bytes 250-500. In that case, you can
+/// create a stream section for those bytes, acting as a single 250-byte-long
+/// stream. Everything outside the 250-500 range will then turn into an EOF.
 #[derive(Debug)]
-pub struct PartialStream<Stream> {
+pub struct StreamSection<Stream> {
     stream: Stream,
     range: Range<u64>,
 }
 
-impl<Stream> PartialStream<Stream> {
+impl<Stream> StreamSection<Stream> {
+    /// Return the original stream.
     pub fn into_inner(self) -> Stream {
         self.stream
     }
 }
 
-impl<Stream: Seek> PartialStream<Stream> {
+impl<Stream: Seek> StreamSection<Stream> {
+    /// Create a stream section by wrapping another stream.
+    ///
+    /// # Parameters
+    ///
+    /// - `stream`: the stream to wrap.
+    /// - `range`: the section of the stream to make visible.
     pub fn new(mut stream: Stream, range: Range<u64>) -> Result<Self, Stream> {
         match stream.seek(SeekFrom::Start(range.start)) {
             Ok(_) => Ok(Self { stream, range }),
@@ -24,7 +38,7 @@ impl<Stream: Seek> PartialStream<Stream> {
     }
 }
 
-impl<Stream: Read + Seek> Read for PartialStream<Stream> {
+impl<Stream: Read + Seek> Read for StreamSection<Stream> {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), Error> {
         let stream_pos = self.stream.stream_position()?;
         let read_range = stream_pos..(stream_pos + bytes.len() as u64);
@@ -36,7 +50,7 @@ impl<Stream: Read + Seek> Read for PartialStream<Stream> {
     }
 }
 
-impl<Stream: Write + Seek> Write for PartialStream<Stream> {
+impl<Stream: Write + Seek> Write for StreamSection<Stream> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error> {
         let stream_pos = self.stream.stream_position()?;
         let write_range = stream_pos..(stream_pos + bytes.len() as u64);
@@ -48,7 +62,7 @@ impl<Stream: Write + Seek> Write for PartialStream<Stream> {
     }
 }
 
-impl<Stream: Seek> Seek for PartialStream<Stream> {
+impl<Stream: Seek> Seek for StreamSection<Stream> {
     fn seek(&mut self, pos: SeekFrom) -> Result<u64, Error> {
         let new_stream_pos = pos.absolute(self.stream_position()?, self.stream_len()?);
         let seek_range = 0..=(self.range.end - self.range.start) as i64;
@@ -88,7 +102,7 @@ mod tests {
     #[test]
     fn newly_created() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.stream_len(), Ok(4));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
@@ -97,7 +111,7 @@ mod tests {
     #[test]
     fn read_well_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let mut values = [0u8; 3];
         stream.read(&mut values)?;
         assert_eq!(stream.stream_position(), Ok(3));
@@ -108,7 +122,7 @@ mod tests {
     #[test]
     fn read_just_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let mut values = [0u8; 4];
         stream.read(&mut values)?;
         assert_eq!(stream.stream_position(), Ok(4));
@@ -119,7 +133,7 @@ mod tests {
     #[test]
     fn read_outside_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let mut values = [0u8; 5];
         assert_eq!(stream.read(&mut values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
@@ -129,7 +143,7 @@ mod tests {
     #[test]
     fn write_well_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let values = [0u8; 3];
         stream.write(&values)?;
         assert_eq!(stream.stream_position(), Ok(3));
@@ -140,7 +154,7 @@ mod tests {
     #[test]
     fn write_just_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let values = [0u8; 4];
         stream.write(&values)?;
         assert_eq!(stream.stream_position(), Ok(4));
@@ -151,7 +165,7 @@ mod tests {
     #[test]
     fn write_outside_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         let values = [0u8; 5];
         assert_eq!(stream.write(&values), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
@@ -162,7 +176,7 @@ mod tests {
     #[test]
     fn seek_from_start_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::Start(3)), Ok(3));
         assert_eq!(stream.stream_position(), Ok(3));
         Ok(())
@@ -171,7 +185,7 @@ mod tests {
     #[test]
     fn seek_from_start_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::Start(5)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
@@ -180,7 +194,7 @@ mod tests {
     #[test]
     fn seek_from_current_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::Current(3)), Ok(3));
         assert_eq!(stream.seek(SeekFrom::Current(-1)), Ok(2));
         assert_eq!(stream.stream_position(), Ok(2));
@@ -190,7 +204,7 @@ mod tests {
     #[test]
     fn seek_from_current_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::Current(5)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
@@ -199,7 +213,7 @@ mod tests {
     #[test]
     fn seek_from_current_negative_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::Current(-2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
@@ -208,7 +222,7 @@ mod tests {
     #[test]
     fn seek_from_end_within_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::End(-3)), Ok(1));
         assert_eq!(stream.stream_position(), Ok(1));
         Ok(())
@@ -217,7 +231,7 @@ mod tests {
     #[test]
     fn seek_from_end_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::End(2)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
@@ -226,7 +240,7 @@ mod tests {
     #[test]
     fn seek_from_end_negative_out_of_bounds() -> Result<(), Error> {
         let mut buffer = [1, 2, 3, 4, 5, 6, 7];
-        let mut stream = PartialStream::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
+        let mut stream = StreamSection::new(FixedMemoryStream::new(&mut buffer), 2..6).expect("new failed");
         assert_eq!(stream.seek(SeekFrom::End(-12)), Err(ErrorKind::UnexpectedEof.into()));
         assert_eq!(stream.stream_position(), Ok(0));
         Ok(())
