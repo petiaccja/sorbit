@@ -6,7 +6,7 @@ pub struct BitFieldType;
 pub struct TraceErrorTrait;
 
 pub struct SerializerTrait;
-pub struct SerializerOutputTrait;
+pub struct SerializationOutcomeTrait;
 pub struct SerializerType;
 pub struct SerializeTrait;
 
@@ -23,7 +23,7 @@ pub const BIT_FIELD_TYPE: BitFieldType = BitFieldType {};
 pub const TRACE_ERROR_TRAIT: TraceErrorTrait = TraceErrorTrait {};
 
 pub const SERIALIZER_TRAIT: SerializerTrait = SerializerTrait {};
-pub const SERIALIZER_OUTPUT_TRAIT: SerializerOutputTrait = SerializerOutputTrait {};
+pub const SERIALIZATION_OUTCOME_TRAIT: SerializationOutcomeTrait = SerializationOutcomeTrait {};
 pub const SERIALIZER_TYPE: SerializerType = SerializerType {};
 pub const SERIALIZE_TRAIT: SerializeTrait = SerializeTrait {};
 
@@ -52,9 +52,9 @@ impl ToTokens for SerializerTrait {
     }
 }
 
-impl ToTokens for SerializerOutputTrait {
+impl ToTokens for SerializationOutcomeTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::serialize::SerializerOutput});
+        tokens.extend(quote! {::sorbit::serialize::SerializationOutcome});
     }
 }
 

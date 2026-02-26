@@ -1,5 +1,5 @@
 use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
-use crate::serialize::serializer::{Lookback, SerializerOutput};
+use crate::serialize::serializer::{Lookback, SerializationOutcome};
 
 use super::Serializer;
 use crate::byte_order::ByteOrder;
@@ -127,7 +127,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Write> SerializerOutput for StreamSerializer<Stream> {
+impl<Stream: Write> SerializationOutcome for StreamSerializer<Stream> {
     type Success = Section;
     type Error = Error;
 }

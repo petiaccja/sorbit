@@ -18,7 +18,7 @@ pub trait Span {
 
 /// A helper trait to define the types a [`Serializer`] returns on success
 /// and error.
-pub trait SerializerOutput {
+pub trait SerializationOutcome {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
@@ -27,7 +27,7 @@ pub trait SerializerOutput {
 
 /// Serializers can transform primitive types into a stream of bytes that can
 /// be sent over the network or stored in files.
-pub trait Serializer: SerializerOutput {
+pub trait Serializer: SerializationOutcome {
     /// The type of the serializer passed to the member serializer in
     /// [`Serializer::serialize_composite`].
     type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
@@ -37,7 +37,7 @@ pub trait Serializer: SerializerOutput {
     type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
     /// Serialize a fictional 0-byte object. Useful for producing a result
-    /// (typically [`SerializerOutput::Success`]) when doing generic programming.
+    /// (typically [`SerializationOutcome::Success`]) when doing generic programming.
     fn serialize_nothing(&mut self) -> Result<Self::Success, Self::Error>;
 
     /// Serialize a [`bool`] value.
@@ -127,7 +127,7 @@ pub trait Serializer: SerializerOutput {
 }
 
 /// A serializer that can introspect previously serialized objects.
-pub trait Lookback: SerializerOutput<Success: Span> {
+pub trait Lookback: SerializationOutcome<Success: Span> {
     /// The type of the serializer passed to the update function in
     /// [`Lookback::update_section`].
     type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
