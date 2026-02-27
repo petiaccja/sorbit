@@ -1,4 +1,4 @@
-name: rustfmt
+name: doc
 on:
   push:
     branches:
@@ -12,6 +12,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
-      - name: Verify formatting
+      - name: Build documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
         run: |
           cargo doc --no-deps
