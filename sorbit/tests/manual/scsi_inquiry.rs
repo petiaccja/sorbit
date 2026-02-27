@@ -1,8 +1,7 @@
-use sorbit::{
-    Deserialize, Serialize,
-    io::FixedMemoryStream,
-    serialize::{Serialize, StreamSerializer},
-};
+use sorbit::io::FixedMemoryStream;
+use sorbit::ser_de::Serialize;
+use sorbit::stream_ser_de::StreamSerializer;
+use sorbit::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 #[sorbit(byte_order=big_endian)]

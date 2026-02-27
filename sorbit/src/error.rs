@@ -22,12 +22,12 @@ pub enum ErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     kind: ErrorKind,
-    item: Item,
+    item: Trace,
 }
 
 /// The location of the error that occured during serialization.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Item {
+pub struct Trace {
     #[cfg(not(feature = "alloc"))]
     name: Option<&'static str>,
     #[cfg(feature = "alloc")]
@@ -35,14 +35,14 @@ pub struct Item {
 }
 
 /// Enable errors to trace the serialized data structure's hierarchy.
-pub trait SerializeError: Sized + From<BitError> {
+pub trait TraceError {
     /// Annotate the error with the member/item that's being serialized.
     #[cfg(not(feature = "alloc"))]
-    fn enclose(self, ident: &'static str) -> Self;
+    fn annotate(self, ident: &'static str) -> Self;
 
     /// Annotate the error with the member/item that's being serialized.
     #[cfg(feature = "alloc")]
-    fn enclose(self, ident: &str) -> Self;
+    fn annotate(self, ident: &str) -> Self;
 }
 
 //------------------------------------------------------------------------------
@@ -51,19 +51,19 @@ pub trait SerializeError: Sized + From<BitError> {
 
 impl From<BitError> for Error {
     fn from(value: BitError) -> Self {
-        Self { kind: ErrorKind::Bit(value), item: Item::default() }
+        Self { kind: ErrorKind::Bit(value), item: Trace::default() }
     }
 }
 
-impl SerializeError for Error {
+impl TraceError for Error {
     #[cfg(not(feature = "alloc"))]
-    fn enclose(self, ident: &'static str) -> Self {
-        Self { kind: self.kind, item: self.item.enclose(ident) }
+    fn annotate(self, ident: &'static str) -> Self {
+        Self { kind: self.kind, item: self.item.annotate(ident) }
     }
 
     #[cfg(feature = "alloc")]
-    fn enclose(self, ident: &str) -> Self {
-        Self { kind: self.kind, item: self.item.enclose(ident) }
+    fn annotate(self, ident: &str) -> Self {
+        Self { kind: self.kind, item: self.item.annotate(ident) }
     }
 }
 
@@ -81,7 +81,7 @@ impl core::fmt::Display for Error {
 
 impl From<ErrorKind> for Error {
     fn from(value: ErrorKind) -> Self {
-        Self { kind: value, item: Item::default() }
+        Self { kind: value, item: Trace::default() }
     }
 }
 
@@ -117,7 +117,7 @@ impl From<std::io::Error> for ErrorKind {
 // Item implementations
 //------------------------------------------------------------------------------
 
-impl Item {
+impl Trace {
     /// Check if there are any member/item annotations recorded.
     #[cfg(not(feature = "alloc"))]
     pub fn is_empty(&self) -> bool {
@@ -132,19 +132,19 @@ impl Item {
 
     /// Annotate the item with the member/item that's being serialized.
     #[cfg(not(feature = "alloc"))]
-    pub fn enclose(self, ident: &'static str) -> Self {
+    pub fn annotate(self, ident: &'static str) -> Self {
         Self { name: Some(self.name.unwrap_or(ident)) }
     }
 
     /// Annotate the item with the member/item that's being serialized.
     #[cfg(feature = "alloc")]
-    pub fn enclose(mut self, ident: &str) -> Self {
+    pub fn annotate(mut self, ident: &str) -> Self {
         self.path.push(ident.into());
         self
     }
 }
 
-impl core::fmt::Display for Item {
+impl core::fmt::Display for Trace {
     #[cfg(not(feature = "alloc"))]
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self.name {

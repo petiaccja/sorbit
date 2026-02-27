@@ -1,4 +1,4 @@
-use super::basic_stream::{Read, Seek, SeekFrom, Write};
+use super::stream::{Read, Seek, SeekFrom, Write};
 use crate::error::{Error, ErrorKind};
 use alloc::vec::Vec;
 

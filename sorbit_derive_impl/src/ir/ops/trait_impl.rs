@@ -1,5 +1,5 @@
 use crate::ir::constants::{
-    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZE_TRAIT, SERIALIZER_OUTPUT_TRAIT,
+    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT,
     SERIALIZER_TRAIT, SERIALIZER_TYPE,
 };
 use crate::ir::dag::{Id, Operation, Region, Value};
@@ -70,8 +70,8 @@ impl Operation for ImplSerializeOp {
                     &self,
                     #serializer: &mut #SERIALIZER_TYPE
                 ) -> ::core::result::Result<
-                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Success,
-                        <#SERIALIZER_TYPE as #SERIALIZER_OUTPUT_TRAIT>::Error
+                        <#SERIALIZER_TYPE as #SERIALIZATION_OUTCOME_TRAIT>::Success,
+                        <#SERIALIZER_TYPE as #SERIALIZATION_OUTCOME_TRAIT>::Error
                     >
                 {
                     #body

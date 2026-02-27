@@ -2,7 +2,7 @@ use crate::error::Error;
 
 /// This trait allows for writing bytes into a sink.
 ///
-/// This trait is used by some [`crate::deserialize::Deserializer`]s
+/// This trait is used by some [`crate::ser_de::Deserializer`]s
 /// that can deserialize from a plain byte stream.
 pub trait Read {
     /// Read exactly as many bytes as fits in `bytes`.
@@ -11,7 +11,7 @@ pub trait Read {
 
 /// This trait allows for reading bytes from a source.
 ///
-/// This trait is used by some [`crate::serialize::Serializer`]s
+/// This trait is used by some [`crate::ser_de::Serializer`]s
 /// that can serialize into a plain byte stream.
 pub trait Write {
     /// Write exactly as many bytes as there are in `bytes`.

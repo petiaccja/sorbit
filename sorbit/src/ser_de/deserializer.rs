@@ -1,10 +1,10 @@
-use crate::{byte_order::ByteOrder, error::SerializeError};
+use crate::{bit::Error as BitError, byte_order::ByteOrder, error::TraceError};
 
 /// Derializers can transform a stream of bytes that can
 /// be sent over the network or stored in files into primitive types.
 pub trait Deserializer: Sized {
     /// The error type returned upon deserialization failure.
-    type Error: SerializeError;
+    type Error: TraceError + From<BitError>;
 
     /// The type of the deserializer passed to the member deserializer in
     /// [`Self::deserialize_composite`].

@@ -1,9 +1,9 @@
 use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
-use crate::serialize::serializer::{Lookback, SerializerOutput};
+use crate::ser_de::{RevisableSerializer, SerializationOutcome};
 
-use super::Serializer;
 use crate::byte_order::ByteOrder;
 use crate::error::{Error, ErrorKind};
+use crate::ser_de::Serializer;
 
 /// A [`Serializer`] that works with any [`Write`]-able stream.
 ///
@@ -11,7 +11,7 @@ use crate::error::{Error, ErrorKind};
 /// buffer.
 ///
 /// For streams that also implement both [`Read`] and [`Seek`], the serializer
-/// is also a [`sorbit::serialize::DeferredSerializer`].
+/// is also a [`sorbit::ser_de::MultiPassSerializer`].
 pub struct StreamSerializer<Stream: Write> {
     stream: Option<Stream>,
     byte_order: ByteOrder,
@@ -39,7 +39,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
     /// [`Self::little_endian`] functions to set a specific byte order:
     /// ```
-    /// # use sorbit::serialize::StreamSerializer;
+    /// # use sorbit::stream_ser_de::StreamSerializer;
     /// # use sorbit::io::GrowingMemoryStream;
     /// # let stream = GrowingMemoryStream::new();
     /// let serializer = StreamSerializer::new(stream).little_endian();
@@ -127,7 +127,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Write> SerializerOutput for StreamSerializer<Stream> {
+impl<Stream: Write> SerializationOutcome for StreamSerializer<Stream> {
     type Success = Section;
     type Error = Error;
 }
@@ -212,7 +212,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
+impl<Stream: Read + Write + Seek> RevisableSerializer for StreamSerializer<Stream> {
     type SectionSerializer = StreamSerializer<StreamSection<Stream>>;
     type SectionReader = StreamSection<Stream>;
 
@@ -264,7 +264,7 @@ impl<Stream: Read + Write + Seek> Lookback for StreamSerializer<Stream> {
     }
 }
 
-impl crate::serialize::Span for Section {
+impl crate::ser_de::Span for Section {
     fn start(&self) -> u64 {
         self.0.start
     }

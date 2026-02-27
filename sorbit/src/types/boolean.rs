@@ -1,5 +1,4 @@
-use crate::deserialize::{Deserialize, Deserializer};
-use crate::serialize::{Serialize, Serializer};
+use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer};
 
 impl Serialize for bool {
     fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {

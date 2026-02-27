@@ -1,6 +1,5 @@
 use crate::utility::{from_bytes, to_bytes};
-use sorbit::deserialize::Deserialize;
-use sorbit::serialize::Serialize;
+use sorbit::ser_de::{Deserialize, Serialize};
 use sorbit::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]

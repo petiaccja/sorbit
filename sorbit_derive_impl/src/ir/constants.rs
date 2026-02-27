@@ -3,10 +3,10 @@ use quote::{ToTokens, quote};
 pub struct BitFieldType;
 
 #[allow(unused)]
-pub struct ErrorTrait;
+pub struct TraceErrorTrait;
 
 pub struct SerializerTrait;
-pub struct SerializerOutputTrait;
+pub struct SerializationOutcomeTrait;
 pub struct SerializerType;
 pub struct SerializeTrait;
 
@@ -20,10 +20,10 @@ pub struct LittleEndian;
 pub const BIT_FIELD_TYPE: BitFieldType = BitFieldType {};
 
 #[allow(unused)]
-pub const ERROR_TRAIT: ErrorTrait = ErrorTrait {};
+pub const TRACE_ERROR_TRAIT: TraceErrorTrait = TraceErrorTrait {};
 
 pub const SERIALIZER_TRAIT: SerializerTrait = SerializerTrait {};
-pub const SERIALIZER_OUTPUT_TRAIT: SerializerOutputTrait = SerializerOutputTrait {};
+pub const SERIALIZATION_OUTCOME_TRAIT: SerializationOutcomeTrait = SerializationOutcomeTrait {};
 pub const SERIALIZER_TYPE: SerializerType = SerializerType {};
 pub const SERIALIZE_TRAIT: SerializeTrait = SerializeTrait {};
 
@@ -40,21 +40,21 @@ impl ToTokens for BitFieldType {
     }
 }
 
-impl ToTokens for ErrorTrait {
+impl ToTokens for TraceErrorTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::error::SerializeError});
+        tokens.extend(quote! {::sorbit::error::TraceError});
     }
 }
 
 impl ToTokens for SerializerTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::serialize::Serializer});
+        tokens.extend(quote! {::sorbit::ser_de::Serializer});
     }
 }
 
-impl ToTokens for SerializerOutputTrait {
+impl ToTokens for SerializationOutcomeTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::serialize::SerializerOutput});
+        tokens.extend(quote! {::sorbit::ser_de::SerializationOutcome});
     }
 }
 
@@ -66,13 +66,13 @@ impl ToTokens for SerializerType {
 
 impl ToTokens for SerializeTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::serialize::Serialize});
+        tokens.extend(quote! {::sorbit::ser_de::Serialize});
     }
 }
 
 impl ToTokens for DeserializerTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::deserialize::Deserializer});
+        tokens.extend(quote! {::sorbit::ser_de::Deserializer});
     }
 }
 
@@ -84,7 +84,7 @@ impl ToTokens for DeserializerType {
 
 impl ToTokens for DeserializeTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::deserialize::Deserialize});
+        tokens.extend(quote! {::sorbit::ser_de::Deserialize});
     }
 }
 impl ToTokens for BigEndian {

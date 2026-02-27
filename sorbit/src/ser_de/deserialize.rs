@@ -1,4 +1,4 @@
-use crate::deserialize::Deserializer;
+use crate::ser_de::Deserializer;
 
 /// The type can be deserialized from a [`Deserializer`].
 ///

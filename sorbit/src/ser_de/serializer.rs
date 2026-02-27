@@ -1,5 +1,6 @@
+use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::SerializeError;
+use crate::error::TraceError;
 use crate::io::{Read, Seek};
 
 /// The section of the byte stream where a serialized object resides.
@@ -17,16 +18,16 @@ pub trait Span {
 
 /// A helper trait to define the types a [`Serializer`] returns on success
 /// and error.
-pub trait SerializerOutput {
+pub trait SerializationOutcome {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
-    type Error: SerializeError;
+    type Error: TraceError + From<BitError>;
 }
 
 /// Serializers can transform primitive types into a stream of bytes that can
 /// be sent over the network or stored in files.
-pub trait Serializer: SerializerOutput {
+pub trait Serializer: SerializationOutcome {
     /// The type of the serializer passed to the member serializer in
     /// [`Serializer::serialize_composite`].
     type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
@@ -36,7 +37,7 @@ pub trait Serializer: SerializerOutput {
     type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
     /// Serialize a fictional 0-byte object. Useful for producing a result
-    /// (typically [`SerializerOutput::Success`]) when doing generic programming.
+    /// (typically [`SerializationOutcome::Success`]) when doing generic programming.
     fn serialize_nothing(&mut self) -> Result<Self::Success, Self::Error>;
 
     /// Serialize a [`bool`] value.
@@ -108,8 +109,7 @@ pub trait Serializer: SerializerOutput {
     ///
     /// ## Returned value
     ///
-    /// For deferred serializers, the [`Span`] for the entire composite is
-    /// returned on success.
+    /// A tuple of the [`Span`] of the entire composite and the output of `serialize_members`.
     fn serialize_composite<Output>(
         &mut self,
         serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
@@ -126,13 +126,13 @@ pub trait Serializer: SerializerOutput {
     ) -> Result<(Self::Success, Output), Self::Error>;
 }
 
-/// A serializer that can introspect previously serialized objects.
-pub trait Lookback: SerializerOutput<Success: Span> {
+/// A serializer that can analyze and update previously serialized objects.
+pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// The type of the serializer passed to the update function in
-    /// [`Lookback::update_section`].
-    type SectionSerializer: Serializer + Lookback<Success = Self::Success, Error = Self::Error>;
+    /// [`RevisableSerializer::update_section`].
+    type SectionSerializer: Serializer + RevisableSerializer<Success = Self::Success, Error = Self::Error>;
     /// The type of the stream passed to the analyzer function in
-    /// [`Lookback::analyze_section`].
+    /// [`RevisableSerializer::analyze_section`].
     type SectionReader: Read + Seek;
 
     /// Analyze the byte stream of previously serialized items.
@@ -163,7 +163,7 @@ pub trait Lookback: SerializerOutput<Success: Span> {
     ///
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
-    /// lengths can be computed by [`Lookback::analyze_section`].
+    /// lengths can be computed by [`RevisableSerializer::analyze_section`].
     fn update_section<Output>(
         &mut self,
         section: &Self::Success,
@@ -171,7 +171,7 @@ pub trait Lookback: SerializerOutput<Success: Span> {
     ) -> Result<Output, Self::Error>;
 }
 
-/// A deferred serializer is a special [`Serializer`] that can look back at the
+/// A multi-pass serializer is a special [`Serializer`] that can look back at the
 /// previously serialized bytes and change them.
 ///
 /// Some types cannot be serialized in a single pass. Think about the IHL and
@@ -182,15 +182,16 @@ pub trait Lookback: SerializerOutput<Success: Span> {
 /// needed, looking back at the entire byte span of the serialized header to
 /// calculate the checksum, and then the checksum needs to be reserialized.
 ///
-/// In addition to the regular [`Serializer`] methods, `DeferredSerializer`s
-/// also implement [`Lookback`] so that you can review and update the serialized
+/// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
+/// also implement [`RevisableSerializer`] so that you can review and update the serialized
 /// byte stream.
-pub trait DeferredSerializer:
-    Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
+pub trait MultiPassSerializer:
+    Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer> + RevisableSerializer
 {
 }
 
-impl<S> DeferredSerializer for S where
-    S: Serializer<CompositeSerializer: Lookback, ByteOrderSerializer: Lookback> + Lookback
+impl<S> MultiPassSerializer for S where
+    S: Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer>
+        + RevisableSerializer
 {
 }
