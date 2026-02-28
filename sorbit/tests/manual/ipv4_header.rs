@@ -63,7 +63,6 @@ impl MultiPassSerialize for IPv4Header {
                 s.align(4)?;
                 Ok((b1_span, checksum_span))
             })
-            .map(|(_, members)| members)
         })?;
         // Update IHL.
         {

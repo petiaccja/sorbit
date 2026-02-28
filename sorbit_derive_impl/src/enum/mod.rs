@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 
-mod parse;
 mod ast;
+mod parse;
 
 pub struct Enum {}
 

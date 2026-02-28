@@ -6,7 +6,9 @@ enum Test {
     #[default]
     A = 4,
     B(i32),
-    C { c: i32 },
+    C {
+        c: i32,
+    },
 }
 
 impl Serialize for Test {

@@ -33,8 +33,6 @@ impl From<parse::Enum> for Enum {
     }
 }
 
-
-
 fn compute_discriminants(variants: impl Iterator<Item = Option<Expr>>) -> Vec<Expr> {
     variants
         .scan((None, 0isize), |(prev, increment), current| match (&prev, current) {

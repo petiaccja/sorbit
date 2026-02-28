@@ -2,15 +2,12 @@ use std::ops::Range;
 
 use syn::{Ident, Member, Type};
 
-use super::lowering::{
-    ToDeserializeOp, ToSerializeOp, lower_alignment, lower_deserialization_rounding, lower_offset,
-    lower_serialization_rounding,
-};
-
 use crate::attribute::{BitNumbering, ByteOrder};
-use crate::ir::dag::{Region, Value};
+use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset, with_maybe_rounding};
+use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ir::ops::{
-    self as ops, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, self_, try_, unpack_bit_field,
+    self as ops, deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, self_,
+    serialize_object, try_, unpack_bit_field,
 };
 
 pub enum Field {
@@ -49,9 +46,13 @@ impl ToSerializeOp for Field {
             Field::Direct { member, ty: _, byte_order, offset, align, round } => {
                 let self_ = self_(region);
                 let object = ops::member(region, self_, member.clone(), true);
-                lower_offset(region, serializer.clone(), *offset, true);
-                lower_alignment(region, serializer.clone(), *align, true);
-                let result = lower_serialization_rounding(region, serializer, object, *byte_order, *round);
+                with_maybe_offset(region, serializer.clone(), *offset, true);
+                with_maybe_alignment(region, serializer.clone(), *align, true);
+                let result = with_maybe_rounding(region, serializer, *round, true, |region, serializer| {
+                    with_maybe_byte_order(region, serializer, *byte_order, true, |region, serializer| {
+                        serialize_object(region, serializer, object)
+                    })
+                });
                 vec![result]
             }
             Field::Bit { ident: _, ty, byte_order, bit_numbering, offset, align, round, members } => {
@@ -68,9 +69,13 @@ impl ToSerializeOp for Field {
 
                 let raw = into_raw_bits(region, bit_field);
                 let raw_ref = ref_(region, raw);
-                lower_offset(region, serializer, *offset, true);
-                lower_alignment(region, serializer, *align, true);
-                let result = lower_serialization_rounding(region, serializer, raw_ref, *byte_order, *round);
+                with_maybe_offset(region, serializer, *offset, true);
+                with_maybe_alignment(region, serializer, *align, true);
+                let result = with_maybe_rounding(region, serializer, *round, true, |region, serializer| {
+                    with_maybe_byte_order(region, serializer, *byte_order, true, |region, serializer| {
+                        serialize_object(region, serializer, raw_ref)
+                    })
+                });
                 vec![result]
             }
         }
@@ -83,16 +88,24 @@ impl ToDeserializeOp for Field {
     fn to_deserialize_op(&self, region: &mut Region, deserializer: Value) -> Vec<Value> {
         match self {
             Field::Direct { member: _, ty, byte_order, offset, align, round } => {
-                lower_offset(region, deserializer, *offset, false);
-                lower_alignment(region, deserializer, *align, false);
-                let result = lower_deserialization_rounding(region, deserializer, ty.clone(), *byte_order, *round);
+                with_maybe_offset(region, deserializer, *offset, false);
+                with_maybe_alignment(region, deserializer, *align, false);
+                let result = with_maybe_rounding(region, deserializer, *round, false, |region, deserializer| {
+                    with_maybe_byte_order(region, deserializer, *byte_order, false, |region, deserializer| {
+                        deserialize_object(region, deserializer, ty.clone())
+                    })
+                });
                 vec![result]
             }
             Field::Bit { ident: _, ty, byte_order, bit_numbering, offset, align, round, members } => {
-                lower_offset(region, deserializer, *offset, false);
-                lower_alignment(region, deserializer, *align, false);
+                with_maybe_offset(region, deserializer, *offset, false);
+                with_maybe_alignment(region, deserializer, *align, false);
                 let maybe_raw_bits =
-                    lower_deserialization_rounding(region, deserializer, ty.clone(), *byte_order, *round);
+                    with_maybe_rounding(region, deserializer, *round, false, |region, deserializer| {
+                        with_maybe_byte_order(region, deserializer, *byte_order, false, |region, deserializer| {
+                            deserialize_object(region, deserializer, ty.clone())
+                        })
+                    });
                 let raw_bits = try_(region, maybe_raw_bits);
                 let bit_field = into_bit_field(region, raw_bits);
 
@@ -264,6 +277,7 @@ mod tests {
             yield %res_ok
         }
         ";
+        println!("{op}");
         assert_matches!(op, pattern);
     }
 

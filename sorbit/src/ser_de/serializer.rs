@@ -123,7 +123,7 @@ pub trait Serializer: SerializationOutcome {
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
-    ) -> Result<(Self::Success, Output), Self::Error>;
+    ) -> Result<Output, Self::Error>;
 }
 
 /// A serializer that can analyze and update previously serialized objects.

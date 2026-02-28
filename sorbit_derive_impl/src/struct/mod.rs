@@ -4,9 +4,7 @@ use syn::DeriveInput;
 mod ast;
 mod parse;
 
-use ast::{ToDeserializeOp as _, ToSerializeOp as _};
-
-use crate::ir::dag::Region;
+use crate::ir::dag::{Region, ToDeserializeOp as _, ToSerializeOp as _};
 
 pub struct Struct {
     inner: ast::Struct,

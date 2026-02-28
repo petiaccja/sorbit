@@ -207,8 +207,8 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         &mut self,
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
-    ) -> Result<(Self::Success, Output), Self::Error> {
-        self.nest(serialize_members, Some(byte_order), None)
+    ) -> Result<Output, Self::Error> {
+        self.nest(serialize_members, Some(byte_order), None).map(|(_, output)| output)
     }
 }
 
