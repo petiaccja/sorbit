@@ -7,7 +7,7 @@ use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
-use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, TypePath};
+use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, TypePath, parse_quote};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ByteOrder {
@@ -110,6 +110,12 @@ pub fn parse_nvp_attribute_group<'attr>(
         }
     }
     Ok(merged)
+}
+
+pub fn parse_repr_attribute(attr: &syn::Attribute) -> Result<Option<Type>, syn::Error> {
+    let list = attr.meta.require_list()?;
+    let ty: syn::Type = list.parse_args()?;
+    Ok::<_, syn::Error>((ty != parse_quote!(C)).then(|| ty))
 }
 
 pub fn as_ident(expr: &Expr) -> Result<Ident, syn::Error> {
