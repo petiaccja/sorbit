@@ -129,6 +129,10 @@ pub trait Serializer: SerializationOutcome {
 }
 
 /// A serializer that can analyze and update previously serialized objects.
+///
+/// When serializing an object succeeds, revisable serializers always return
+/// a [Span] that contains the location in the stream where the object was
+/// serialized. The span can later be used to analyze and update the stream.
 pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// The type of the serializer passed to the update function in
     /// [`RevisableSerializer::update_section`].
