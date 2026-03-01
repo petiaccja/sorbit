@@ -1,7 +1,7 @@
 [package]
 name = "sorbit"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
 
 license = "MIT"
 description = "A serialization framework to define bit-accurate binary formats."
@@ -17,8 +17,8 @@ std = ["alloc"]
 default = ["std"]
 
 [dependencies]
-sorbit_derive = { version = "=0.1.0", path = "../sorbit_derive" }
-num = { version = "0.4.3", default-features = false }
+sorbit_derive.workspace = true
+num.workspace = true
 
 [dev-dependencies]
-rstest = {version = "0.26.1"}
+rstest.workspace = true
