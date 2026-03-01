@@ -2,6 +2,8 @@
 
 //! # Sorbit
 //!
+//! *Notice: the API is not yet stable.*
+//!
 //! Sorbit is a framework for serializing and deserializing data structures in
 //! an exact binary layout. Sorbit works like other serialization frameworks,
 //! but it gives you control over details like endianness, bit numbering,
