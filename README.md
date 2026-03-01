@@ -4,6 +4,8 @@
 ![License](https://img.shields.io/badge/License-MIT-blue)
 [![Build & test](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml)
 
+*Notice: the API is not yet stable.*
+
 Sorbit is a binary serialization framework that gives you complete control over the layout of the serialized data. Sorbit helps you define network packets, firmware messages, or other binary data structures that are governed by an external specification. 
 
 For further documentation, head to [docs.rs](https://docs.rs/sorbit/latest/sorbit/index.html).
