@@ -199,6 +199,10 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
     ) -> Result<O, Self::Error> {
         self.nest(deserialize_members, Some(byte_order), None)
     }
+
+    fn error<O>(&self, message: &'static str) -> Result<O, Self::Error> {
+        Err(Self::Error::from(ErrorKind::Custom(message)))
+    }
 }
 
 #[cfg(test)]

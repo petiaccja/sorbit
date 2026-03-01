@@ -157,21 +157,21 @@ impl Operation for AnnotateResultOp {
 }
 
 //------------------------------------------------------------------------------
-// Serialize nothing
+// Success
 //------------------------------------------------------------------------------
 
-struct SerializeNothingOp {
+struct SuccessOp {
     id: Id,
     serializer: Value,
 }
 
-pub fn serialize_nothing(region: &mut Region, serializer: Value) -> Value {
-    region.push(SerializeNothingOp { id: Id::new(), serializer })[0]
+pub fn success(region: &mut Region, serializer: Value) -> Value {
+    region.push(SuccessOp { id: Id::new(), serializer })[0]
 }
 
-impl Operation for SerializeNothingOp {
+impl Operation for SuccessOp {
     fn name(&self) -> &str {
-        "serialize_nothing"
+        "success"
     }
 
     fn id(&self) -> Id {
@@ -196,7 +196,53 @@ impl Operation for SerializeNothingOp {
 
     fn to_token_stream(&self) -> TokenStream {
         let serializer = &self.serializer;
-        quote! { #SERIALIZER_TRAIT::serialize_nothing(#serializer) }
+        quote! { #SERIALIZER_TRAIT::success(#serializer) }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Error
+//------------------------------------------------------------------------------
+
+struct ErrorOp {
+    id: Id,
+    deserializer: Value,
+    message: String,
+}
+
+pub fn error(region: &mut Region, deserializer: Value, message: String) -> Value {
+    region.push(ErrorOp { id: Id::new(), deserializer, message })[0]
+}
+
+impl Operation for ErrorOp {
+    fn name(&self) -> &str {
+        "error"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.deserializer]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.message.clone()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let deserializer = &self.deserializer;
+        let message = &self.message;
+        quote! { #DESERIALIZER_TRAIT::error(#deserializer, #message) }
     }
 }
 

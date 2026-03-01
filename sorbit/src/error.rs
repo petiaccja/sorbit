@@ -14,6 +14,7 @@ pub enum ErrorKind {
     UnexpectedEof,
     InvalidEnumVariant,
     Bit(BitError),
+    Custom(&'static str),
     #[cfg(feature = "std")]
     IO(std::io::ErrorKind),
 }
@@ -97,6 +98,7 @@ impl core::fmt::Display for ErrorKind {
             UnexpectedEof => write!(f, "end of file reached, cannot read/write more data"),
             InvalidEnumVariant => write!(f, "the numeric value does not correspond to an enum or bool variant"),
             Bit(err) => write!(f, "the bit field cannot be packed: {err}"),
+            Custom(message) => write!(f, "{message}"),
             #[cfg(feature = "std")]
             IO(kind) => write!(f, "{kind}"),
         }

@@ -1,16 +1,17 @@
 use syn::{Generics, Ident};
 
 use crate::attribute::ByteOrder;
+use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ir::dag::{Region, Value};
 use crate::ir::ops::{
-    self, deserialize_composite, impl_deserialize, impl_serialize, member, ok, serialize_composite, serialize_nothing,
-    struct_, try_, tuple, yield_,
+    deserialize_composite, impl_deserialize, impl_serialize, member, ok, serialize_composite, struct_, success, try_,
+    tuple, yield_,
 };
 
 use super::super::parse;
 use super::field::Field;
 use super::field_group::group_fields;
-use super::lowering::{ToDeserializeOp, ToSerializeOp, lower_alignment, lower_offset};
+use crate::ir::dag::{ToDeserializeOp, ToSerializeOp};
 
 pub struct Struct {
     pub ident: Ident,
@@ -45,17 +46,9 @@ impl ToSerializeOp for Struct {
 
     fn to_serialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
         impl_serialize(region, self.ident.clone(), self.generics.clone(), |region, serializer| {
-            let result = if let Some(byte_order) = self.byte_order {
-                let result_bo = ops::byte_order(region, serializer, byte_order, true, |region, serializer| {
-                    let result = self.serialize_members(region, serializer);
-                    yield_(region, vec![result]);
-                });
-                let span_bo = try_(region, result_bo);
-                let span = member(region, span_bo, syn::Member::Unnamed(syn::Index::from(0)), false);
-                ok(region, span)
-            } else {
+            let result = with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
                 self.serialize_members(region, serializer)
-            };
+            });
             yield_(region, vec![result]);
         });
         vec![]
@@ -67,14 +60,9 @@ impl ToDeserializeOp for Struct {
 
     fn to_deserialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
         impl_deserialize(region, self.ident.clone(), self.generics.clone(), |region, deserializer| {
-            let result = if let Some(byte_order) = self.byte_order {
-                ops::byte_order(region, deserializer, byte_order, false, |region, deserializer| {
-                    let result = self.deserialize_members(region, deserializer);
-                    yield_(region, vec![result]);
-                })
-            } else {
+            let result = with_maybe_byte_order(region, deserializer, self.byte_order, false, |region, deserializer| {
                 self.deserialize_members(region, deserializer)
-            };
+            });
             yield_(region, vec![result]);
         });
         vec![]
@@ -85,16 +73,16 @@ impl Struct {
     fn serialize_members(&self, region: &mut Region, serializer: Value) -> Value {
         let maybe_composite = serialize_composite(region, serializer, |region, serializer| {
             if self.fields.is_empty() {
-                let serialize_nothing = serialize_nothing(region, serializer.clone());
-                lower_offset(region, serializer, self.len, true);
-                lower_alignment(region, serializer, self.round, true);
-                let _ = yield_(region, vec![serialize_nothing]);
+                let success_ = success(region, serializer.clone());
+                with_maybe_offset(region, serializer, self.len, true);
+                with_maybe_alignment(region, serializer, self.round, true);
+                let _ = yield_(region, vec![success_]);
             } else {
                 let maybe_spans: Vec<_> =
                     self.fields.iter().map(|field| field.to_serialize_op(region, serializer)).flatten().collect();
                 let spans: Vec<_> = maybe_spans.into_iter().map(|maybe_span| try_(region, maybe_span)).collect();
-                lower_offset(region, serializer, self.len, true);
-                lower_alignment(region, serializer, self.round, true);
+                with_maybe_offset(region, serializer, self.len, true);
+                with_maybe_alignment(region, serializer, self.round, true);
                 let span_tuple = tuple(region, spans);
                 let result = ok(region, span_tuple);
                 let _ = yield_(region, vec![result]);
@@ -137,8 +125,8 @@ impl Struct {
                 }
             }
 
-            lower_offset(region, deserializer, self.len, false);
-            lower_alignment(region, deserializer, self.round, false);
+            with_maybe_offset(region, deserializer, self.len, false);
+            with_maybe_alignment(region, deserializer, self.round, false);
 
             let struct_ = struct_(
                 region,
@@ -185,7 +173,7 @@ mod tests {
         {
             impl_serialize [ Test ] |%serializer| {
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
-                    %nothing = serialize_nothing %s_inner
+                    %nothing = success %s_inner
                     yield %nothing
                 }
                 %composite = try %maybe_composite
@@ -217,7 +205,7 @@ mod tests {
         {
             impl_serialize [ Test ] |%serializer| {
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
-                    %nothing = serialize_nothing %s_inner
+                    %nothing = success %s_inner
                     %maybe_len = pad [12, true] %s_inner
                     %len = try %maybe_len
                     %maybe_round = align [8, true] %s_inner

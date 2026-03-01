@@ -9,6 +9,20 @@ use quote::format_ident;
 use quote::quote;
 
 //------------------------------------------------------------------------------
+// Conversion to DAG traits.
+//------------------------------------------------------------------------------
+
+pub trait ToSerializeOp {
+    type Args;
+    fn to_serialize_op(&self, region: &mut Region, args: Self::Args) -> Vec<Value>;
+}
+
+pub trait ToDeserializeOp {
+    type Args;
+    fn to_deserialize_op(&self, region: &mut Region, args: Self::Args) -> Vec<Value>;
+}
+
+//------------------------------------------------------------------------------
 // Operation trait
 //------------------------------------------------------------------------------
 

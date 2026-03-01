@@ -98,4 +98,10 @@ pub trait Deserializer: Sized {
         byte_order: ByteOrder,
         deserialize_members: impl FnOnce(&mut Self::ByteOrderDeserializer) -> Result<O, Self::Error>,
     ) -> Result<O, Self::Error>;
+
+    /// Return an error, indicating that deserialization failed.
+    ///
+    /// This method can be called by implementors of [`crate::ser_de::Serialize`]
+    /// when an error occurs during serialization.
+    fn error<O>(&self, message: &'static str) -> Result<O, Self::Error>;
 }

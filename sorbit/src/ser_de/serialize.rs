@@ -30,3 +30,17 @@ pub trait MultiPassSerialize {
     /// See [`Serialize::serialize`] for more information.
     fn serialize<S: MultiPassSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
+
+/// Blanket implementation of serialize for references.
+impl<T: Serialize> Serialize for &T {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+        (*self).serialize(serializer)
+    }
+}
+
+/// Blanket implementation of multi-pass serialize for references.
+impl<T: Serialize> MultiPassSerialize for &T {
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+        (*self).serialize(serializer)
+    }
+}

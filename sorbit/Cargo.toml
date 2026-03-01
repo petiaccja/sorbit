@@ -19,3 +19,6 @@ default = ["std"]
 [dependencies]
 sorbit_derive = { version = "=0.1.0", path = "../sorbit_derive" }
 num = { version = "0.4.3", default-features = false }
+
+[dev-dependencies]
+rstest = {version = "0.26.1"}

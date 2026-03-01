@@ -7,7 +7,9 @@ use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
-use syn::{Attribute, Expr, ExprLit, ExprRange, Ident, Lit, Meta, Path, RangeLimits, Type, TypePath};
+use syn::{
+    Attribute, Expr, ExprLit, ExprRange, Ident, Lit, LitBool, Meta, Path, RangeLimits, Type, TypePath, parse_quote,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ByteOrder {
@@ -65,6 +67,10 @@ pub mod path {
     pub fn bit_numbering() -> Path {
         parse_quote!(bit_numbering)
     }
+
+    pub fn catch_all() -> Path {
+        parse_quote!(catch_all)
+    }
 }
 
 pub fn parse_nvp_attribute(attribute: &Attribute) -> Result<HashMap<Path, Expr>, syn::Error> {
@@ -75,8 +81,14 @@ pub fn parse_nvp_attribute(attribute: &Attribute) -> Result<HashMap<Path, Expr>,
 
     let mut name_values = HashMap::new();
     for meta in metas {
-        let name_value = meta.require_name_value()?;
-        name_values.insert(name_value.path.clone(), name_value.value.clone());
+        match meta {
+            Meta::Path(path) => name_values.insert(
+                path.clone(),
+                Expr::Lit(ExprLit { attrs: vec![], lit: Lit::Bool(LitBool { value: true, span: path.span() }) }),
+            ),
+            Meta::List(list) => return Err(syn::Error::new(list.span(), "expected a name value pair or a path")),
+            Meta::NameValue(name_value) => name_values.insert(name_value.path.clone(), name_value.value.clone()),
+        };
     }
 
     Ok(name_values)
@@ -112,6 +124,12 @@ pub fn parse_nvp_attribute_group<'attr>(
     Ok(merged)
 }
 
+pub fn parse_repr_attribute(attr: &syn::Attribute) -> Result<Option<Type>, syn::Error> {
+    let list = attr.meta.require_list()?;
+    let ty: syn::Type = list.parse_args()?;
+    Ok::<_, syn::Error>((ty != parse_quote!(C)).then(|| ty))
+}
+
 pub fn as_ident(expr: &Expr) -> Result<Ident, syn::Error> {
     match expr {
         Expr::Path(path) => path.path.require_ident().cloned(),
@@ -133,6 +151,13 @@ where
     match expr {
         Expr::Lit(ExprLit { attrs: _, lit: Lit::Int(int) }) => int.base10_parse(),
         _ => Err(syn::Error::new(expr.span(), "expected a literal integer")),
+    }
+}
+
+pub fn as_literal_bool(expr: &Expr) -> Result<bool, syn::Error> {
+    match expr {
+        Expr::Lit(ExprLit { attrs: _, lit: Lit::Bool(LitBool { value, span: _ }) }) => Ok(*value),
+        _ => Err(syn::Error::new(expr.span(), "expected a literal boolean")),
     }
 }
 
