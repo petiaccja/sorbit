@@ -1,15 +1,12 @@
 # Sorbit
 
-
 ![Language](https://img.shields.io/badge/Language-Rust-blue)
-![Language](https://img.shields.io/badge/License-MIT-blue)
-[![build_and_test](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml)
+![License](https://img.shields.io/badge/License-MIT-blue)
+[![Build & test](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml)
 
-Sorbit is a binary serialization framework that gives you complete control over the layout of the serialized data. Sorbit helps you define network packets, firmware messages, or other binary data structures that are governed by an external specification.
+Sorbit is a binary serialization framework that gives you complete control over the layout of the serialized data. Sorbit helps you define network packets, firmware messages, or other binary data structures that are governed by an external specification. 
 
-### How is Sorbit different from [serde](https://github.com/serde-rs/serde)?
-
-Serde is a general purpose serialization framework that handles both text and binary formats, but the control over the exact layout of the binary formats is limited and more difficult to specify. Sorbit, on the other hand, is a specialized serialization framework with tightly controlled binary formats at its focus. While sorbit can be used as a general purpose framework, and can even serialize to text formats, you're better off using a framework like serde for that.
+For further documentation, head to [docs.rs](https://docs.rs/sorbit/latest/sorbit/index.html).
 
 ## Example
 
