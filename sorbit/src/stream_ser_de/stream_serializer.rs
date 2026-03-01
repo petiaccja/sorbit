@@ -136,7 +136,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     type CompositeSerializer = Self;
     type ByteOrderSerializer = Self;
 
-    fn serialize_nothing(&mut self) -> Result<Self::Success, Self::Error> {
+    fn success(&mut self) -> Result<Self::Success, Self::Error> {
         self.write(&[])
     }
 

@@ -4,8 +4,8 @@ use crate::attribute::ByteOrder;
 use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ir::dag::{Region, Value};
 use crate::ir::ops::{
-    deserialize_composite, impl_deserialize, impl_serialize, member, ok, serialize_composite, serialize_nothing,
-    struct_, try_, tuple, yield_,
+    deserialize_composite, impl_deserialize, impl_serialize, member, ok, serialize_composite, struct_, success, try_,
+    tuple, yield_,
 };
 
 use super::super::parse;
@@ -73,10 +73,10 @@ impl Struct {
     fn serialize_members(&self, region: &mut Region, serializer: Value) -> Value {
         let maybe_composite = serialize_composite(region, serializer, |region, serializer| {
             if self.fields.is_empty() {
-                let serialize_nothing = serialize_nothing(region, serializer.clone());
+                let success_ = success(region, serializer.clone());
                 with_maybe_offset(region, serializer, self.len, true);
                 with_maybe_alignment(region, serializer, self.round, true);
-                let _ = yield_(region, vec![serialize_nothing]);
+                let _ = yield_(region, vec![success_]);
             } else {
                 let maybe_spans: Vec<_> =
                     self.fields.iter().map(|field| field.to_serialize_op(region, serializer)).flatten().collect();
@@ -173,7 +173,7 @@ mod tests {
         {
             impl_serialize [ Test ] |%serializer| {
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
-                    %nothing = serialize_nothing %s_inner
+                    %nothing = success %s_inner
                     yield %nothing
                 }
                 %composite = try %maybe_composite
@@ -205,7 +205,7 @@ mod tests {
         {
             impl_serialize [ Test ] |%serializer| {
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
-                    %nothing = serialize_nothing %s_inner
+                    %nothing = success %s_inner
                     %maybe_len = pad [12, true] %s_inner
                     %len = try %maybe_len
                     %maybe_round = align [8, true] %s_inner

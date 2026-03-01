@@ -36,10 +36,6 @@ pub trait Serializer: SerializationOutcome {
     /// [`Serializer::with_byte_order`].
     type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
 
-    /// Serialize a fictional 0-byte object. Useful for producing a result
-    /// (typically [`SerializationOutcome::Success`]) when doing generic programming.
-    fn serialize_nothing(&mut self) -> Result<Self::Success, Self::Error>;
-
     /// Serialize a [`bool`] value.
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;
 
@@ -124,6 +120,12 @@ pub trait Serializer: SerializationOutcome {
         byte_order: ByteOrder,
         serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
+
+    /// Return [`Ok`].
+    ///
+    /// Use this to exit serialization with a success when you don't have any
+    /// actual values to serialize.
+    fn success(&mut self) -> Result<Self::Success, Self::Error>;
 }
 
 /// A serializer that can analyze and update previously serialized objects.

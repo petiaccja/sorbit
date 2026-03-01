@@ -19,7 +19,7 @@ impl DeriveObject {
     pub fn parse(input: DeriveInput) -> Result<Self, syn::Error> {
         match &input.data {
             syn::Data::Struct(_) => Ok(Self::Struct(Struct::try_from(input)?)),
-            syn::Data::Enum(_) => todo!(),
+            syn::Data::Enum(_) => Ok(Self::Enum(Enum::try_from(input)?)),
             syn::Data::Union(_) => Err(syn::Error::new(input.span(), "unions are not supported")),
         }
     }

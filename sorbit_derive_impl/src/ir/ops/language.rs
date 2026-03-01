@@ -242,6 +242,153 @@ impl Operation for TryOp {
 }
 
 //------------------------------------------------------------------------------
+// Match
+//------------------------------------------------------------------------------
+
+pub struct MatchOp {
+    id: Id,
+    expr: Value,
+    arms: Vec<(syn::Pat, Option<syn::Expr>, Region)>,
+}
+
+pub fn match_<'a>(
+    region: &mut Region,
+    expr: Value,
+    arms: impl Iterator<Item = (syn::Pat, Option<syn::Expr>, Box<dyn FnOnce(&mut Region) -> Value>)>,
+) -> Value {
+    let arms = arms
+        .map(|(pattern, guard, arm_fn)| {
+            let mut arm_region = Region::new(0);
+            let result = arm_fn(&mut arm_region);
+            let _ = yield_(&mut arm_region, vec![result]);
+            (pattern, guard, arm_region)
+        })
+        .collect();
+    region.push(MatchOp { id: Id::new(), expr, arms })[0]
+}
+
+impl Operation for MatchOp {
+    fn name(&self) -> &str {
+        "match"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.expr]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        self.arms.iter().map(|arm| &arm.2).collect()
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        self.arms
+            .iter()
+            .map(|(pat, guard, _region)| {
+                let pat_s = pat.to_token_stream().to_string();
+                let guard_s = guard.as_ref().map(|guard| guard.to_token_stream().to_string());
+                match guard_s {
+                    Some(guard) => format!("{pat_s} if {guard}"),
+                    None => pat_s,
+                }
+            })
+            .collect()
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let expr = self.expr;
+        let arms = self.arms.iter().map(|(pattern, guard, region)| match guard {
+            Some(guard) => quote! { #pattern if #guard => #region },
+            None => quote! { #pattern => #region },
+        });
+        quote! {
+            match #expr {
+                #(#arms)*
+            }
+        }
+    }
+
+    fn to_string(&self, alternate: bool) -> String {
+        let arms = self
+            .arms
+            .iter()
+            .map(|(pat, guard, region)| {
+                let pat_s = pat.to_token_stream().to_string();
+                let guard_s = guard.as_ref().map(|guard| guard.to_token_stream().to_string());
+                let region_s = if alternate { format!("{region:#}") } else { format!("{region}") };
+                match guard_s {
+                    Some(guard) => format!("{pat_s} if {guard} => {region_s}"),
+                    None => format!("{pat_s} => {region_s}"),
+                }
+            })
+            .collect::<Vec<_>>();
+        let line_sep = if alternate { "\n" } else { " " };
+        let arms_s = arms.join(line_sep);
+        let arms_s = if alternate { textwrap::indent(&arms_s, "    ") } else { arms_s };
+        let expr = &self.expr;
+        let result = self.outputs()[0];
+        format!("{result} = match {expr} {{{line_sep}{arms_s}{line_sep}}}")
+    }
+}
+
+//------------------------------------------------------------------------------
+// Expr
+//------------------------------------------------------------------------------
+
+/// Introducing [`syn`] expressions into the SSA IR.
+///
+/// This operation is necessary when it's impossible or impractical to convert
+/// an expression to the SSA IR. This is the case, for example, for enum
+/// discriminants, which can be arbitrary expressions like calling a const
+/// function.
+pub struct CustomExprOp {
+    id: Id,
+    expr: syn::Expr,
+}
+
+pub fn custom_expr(region: &mut Region, expr: syn::Expr) -> Value {
+    region.push(CustomExprOp { id: Id::new(), expr })[0]
+}
+
+impl Operation for CustomExprOp {
+    fn name(&self) -> &str {
+        "custom_expr"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.expr.to_token_stream().to_string()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let expr = &self.expr;
+        quote! { #expr }
+    }
+}
+
+//------------------------------------------------------------------------------
 // Ok
 //------------------------------------------------------------------------------
 
