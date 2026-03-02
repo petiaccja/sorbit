@@ -22,6 +22,14 @@ impl Enum {
         self.inner.to_deserialize_op(&mut region, ());
         region.to_token_stream_formatted(false)
     }
+
+    pub fn derive_pack_into(&self) -> TokenStream {
+        self.inner.to_pack_into_tokens()
+    }
+
+    pub fn derive_unpack_from(&self) -> TokenStream {
+        self.inner.to_unpack_from_tokens()
+    }
 }
 
 impl TryFrom<DeriveInput> for Enum {
