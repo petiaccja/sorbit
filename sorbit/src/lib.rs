@@ -236,6 +236,8 @@
 //!
 //! ### Enumerations
 //!
+//! #### Serialization
+//!
 //! ```
 //! use sorbit::{Serialize, Deserialize};
 //!
@@ -264,6 +266,33 @@
 //! discriminant read during deserialization will be stored in the catch all
 //! variant. During serialization, when the enum is the catch all variant,
 //! the discriminant is taken from the catch all variant's field.
+//!
+//! #### Bit packing
+//!
+//! Remember the [sorbit::bit::PackInto] and [sorbit::bit::UnpackFrom] traits
+//! you need to implement for a type to use it in a bit field?
+//!
+//! You can derive them for enumerations:
+//!
+//! ```
+//! use sorbit::{PackInto, UnpackFrom};
+//!
+//! #[derive(PackInto, UnpackFrom)]
+//! #[sorbit(byte_order=big_endian)]
+//! #[repr(u8)]
+//! enum Example {
+//!     A = 1,
+//!     #[sorbit(catch_all)]
+//!     B(u8),
+//! }
+//! ```
+//!
+//! Once derived, you can use the enumeration in bit fields. Keep in mind that
+//! the packing is forwarded to the enum's repr type. The `catch_all` attribute
+//! is handled the same way as for serialization, other attributes are ignored.
+//!
+//! The derivation of bit packing is only applicable to unit enums. You can
+//! still derive the traits by hand if it makes sense for you.
 //!
 //! ## `no_std`
 //!
@@ -301,7 +330,7 @@ pub mod byte_order;
 pub mod error;
 pub mod io;
 pub mod ser_de;
-pub use sorbit_derive::{Deserialize, Serialize};
+pub use sorbit_derive::{Deserialize, PackInto, Serialize, UnpackFrom};
 pub mod stream_ser_de;
 
 mod types;

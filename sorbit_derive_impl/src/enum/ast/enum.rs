@@ -1,5 +1,5 @@
-use proc_macro2::Span;
-use quote::ToTokens;
+use proc_macro2::{Span, TokenStream};
+use quote::{ToTokens, quote};
 use syn::spanned::Spanned as _;
 use syn::{BinOp, Expr, ExprBinary, ExprLit, Generics, Ident, Lit, LitInt, Token, Type, parse_quote};
 
@@ -191,6 +191,81 @@ impl ToDeserializeOp for Enum {
             let _ = yield_(region, vec![result]);
         });
         vec![]
+    }
+}
+
+impl Enum {
+    pub fn to_pack_into_tokens(&self) -> TokenStream {
+        let ident = &self.ident;
+        let storage_ty = &self.storage_ty;
+
+        let exact_arms = self.normal_variants().map(|variant| {
+            let ident = &variant.ident;
+            let discr_expr = &variant.discriminant;
+            quote! { Self::#ident => { ((#discr_expr) as #storage_ty).pack_into(num_bits) } }
+        });
+        let catch_all_arm = self.catch_all_variant().map(|(variant, store_disc)| {
+            let ident = &variant.ident;
+            let discr_expr = &variant.discriminant;
+            if store_disc {
+                quote! { Self::#ident(value) => { value.pack_into(num_bits) } }
+            } else {
+                quote! { Self::#ident => { ((#discr_expr) as #storage_ty).pack_into(num_bits) } }
+            }
+        });
+        let arms = exact_arms.chain(catch_all_arm);
+
+        quote! {
+            impl<Packed> ::sorbit::bit::PackInto<Packed> for #ident
+            where
+                #storage_ty: ::sorbit::bit::PackInto<Packed>,
+            {
+                fn pack_into(&self, num_bits: usize) -> ::core::option::Option<Packed> {
+                    match self {
+                        #(#arms)*
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn to_unpack_from_tokens(&self) -> TokenStream {
+        let ident = &self.ident;
+        let storage_ty = &self.storage_ty;
+
+        let exact_arms = self.normal_variants().map(|variant| {
+            let ident = &variant.ident;
+            let discr_expr = &variant.discriminant;
+            quote! { n if n == (#discr_expr) as u8 => { ::core::result::Result::Ok(Self::#ident) } }
+        });
+        let catch_all_arm = self
+            .catch_all_variant()
+            .map(|(variant, store_disc)| {
+                let ident = &variant.ident;
+                if store_disc {
+                    quote! { n => { ::core::result::Result::Ok(Self::#ident(n)) } }
+                } else {
+                    quote! { _ => { ::core::result::Result::Ok(Self::#ident) } }
+                }
+            })
+            .unwrap_or_else(|| {
+                quote! { _ => { Err(value) } }
+            });
+        let arms = exact_arms.chain(std::iter::once(catch_all_arm));
+
+        quote! {
+            impl<Packed> ::sorbit::bit::UnpackFrom<Packed> for #ident
+            where
+                #storage_ty: ::sorbit::bit::UnpackFrom<Packed>,
+                Packed: Clone,
+            {
+                fn unpack_from(value: Packed, num_bits: usize) -> ::core::result::Result<Self, Packed> {
+                    match u8::unpack_from(value.clone(), num_bits)? {
+                        #(#arms)*
+                    }
+                }
+            }
+        }
     }
 }
 
