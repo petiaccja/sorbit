@@ -1,6 +1,7 @@
 use crate::ir::dag::{Id, Operation, Region, Value};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+use syn::{Ident, Member, Type};
 
 //------------------------------------------------------------------------------
 // Self
@@ -85,6 +86,102 @@ impl Operation for RefOp {
     fn to_token_stream(&self) -> TokenStream {
         let value = &self.value;
         quote! { &#value }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Destructure
+//------------------------------------------------------------------------------
+
+pub struct DestructureOp {
+    id: Id,
+    structured: Value,
+    ty: Type,
+    bindings: Vec<(Member, Ident)>,
+}
+
+pub fn destructure(region: &mut Region, structured: Value, ty: Type, bindings: Vec<(Member, Ident)>) {
+    region.push(DestructureOp { id: Id::new(), structured, ty, bindings });
+}
+
+impl Operation for DestructureOp {
+    fn name(&self) -> &str {
+        "destructure"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.structured]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        self.bindings
+            .iter()
+            .map(|binding| format!("{}:{}", binding.0.to_token_stream(), binding.1))
+            .collect()
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let ty = &self.ty;
+        let structured = self.structured;
+        let members = self.bindings.iter().map(|(member, _)| member);
+        let idents = self.bindings.iter().map(|(_, ident)| ident);
+        quote! { #[allow(warnings)] let #ty{ #(#members: #idents),*} = #structured }
+    }
+}
+
+//------------------------------------------------------------------------------
+// SymrefOp
+//------------------------------------------------------------------------------
+
+pub struct SymrefOp {
+    id: Id,
+    sym: Ident,
+}
+
+pub fn symref(region: &mut Region, sym: Ident) -> Value {
+    region.push(SymrefOp { id: Id::new(), sym })[0]
+}
+
+impl Operation for SymrefOp {
+    fn name(&self) -> &str {
+        "symref"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.sym.to_string()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let sym = &self.sym;
+        quote! { #sym }
     }
 }
 

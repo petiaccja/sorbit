@@ -2,6 +2,7 @@ mod attribute;
 mod r#enum;
 mod ir;
 mod r#struct;
+mod utility;
 
 use proc_macro2::{Span, TokenStream};
 use syn::DeriveInput;
