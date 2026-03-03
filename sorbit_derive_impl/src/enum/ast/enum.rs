@@ -9,9 +9,11 @@ use crate::r#enum::parse;
 use crate::ir::algorithm::with_maybe_byte_order;
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ir::ops::{
-    custom_expr, deserialize_object, error, impl_deserialize, impl_serialize, match_, ok, ref_, self_,
-    serialize_object, struct_, try_, yield_,
+    custom_expr, deserialize_object, error, impl_deserialize, impl_serialize, match_, member, ok, ref_, self_,
+    serialize_composite, serialize_object, struct_, try_, use_, yield_,
 };
+use crate::r#struct::ast::Struct;
+use crate::utility::deconstruct_pattern;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
@@ -35,6 +37,122 @@ impl Enum {
             .iter()
             .find(|variant| self.catch_all.as_ref().is_some_and(|(ident, _)| ident == &variant.ident))
             .map(|variant| (variant, self.catch_all.as_ref().expect("find ensures Some").1))
+    }
+
+    fn normal_arm_serialize(
+        self_ident: &Ident,
+        storage_ty: &Type,
+        serializer: Value,
+        variant: &Variant,
+    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+        let variant_ident = &variant.ident;
+        let pat = if let Some(content) = &variant.content {
+            deconstruct_pattern(&parse_quote!(#self_ident::#variant_ident), content.members().into_iter())
+        } else {
+            parse_quote!(#self_ident::#variant_ident)
+        };
+        let discriminant_expr = variant.discriminant.clone();
+        let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
+        let content = variant.content.as_ref().cloned();
+        let body = move |region: &mut Region| {
+            if let Some(content) = content {
+                let result_comp = serialize_composite(region, serializer, move |region, serializer| {
+                    let discriminant = custom_expr(region, discriminant_cast);
+                    let disc_ref = ref_(region, discriminant);
+                    let disc_result = serialize_object(region, serializer, disc_ref);
+                    try_(region, disc_result);
+                    let result = content.serialize_members(region, serializer);
+                    yield_(region, vec![result]);
+                });
+                let span_comp = try_(region, result_comp);
+                let span_comp0 = member(region, span_comp, syn::Member::from(0), false);
+                ok(region, span_comp0)
+            } else {
+                let discriminant = custom_expr(region, discriminant_cast);
+                let disc_ref = ref_(region, discriminant);
+                serialize_object(region, serializer, disc_ref)
+            }
+        };
+        (pat, None, Box::new(body) as Box<_>)
+    }
+
+    fn catch_all_arm_serialize(
+        self_ident: &Ident,
+        storage_ty: &Type,
+        serializer: Value,
+        variant: &Variant,
+        store_disc: bool,
+    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+        let variant_ident = &variant.ident;
+        if store_disc {
+            let pat = parse_quote!(#self_ident::#variant_ident(value));
+            let value_expr = parse_quote!(value);
+            let body = move |region: &mut Region| {
+                let discriminant = custom_expr(region, value_expr);
+                let disc_ref = ref_(region, discriminant);
+                serialize_object(region, serializer, disc_ref)
+            };
+            (pat, None, Box::new(body) as Box<_>)
+        } else {
+            let pat = parse_quote!(#self_ident::#variant_ident);
+            let discriminant_expr = variant.discriminant.clone();
+            let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
+            let body = move |region: &mut Region| {
+                let discriminant = custom_expr(region, discriminant_cast);
+                let disc_ref = ref_(region, discriminant);
+                serialize_object(region, serializer, disc_ref)
+            };
+            (pat, None, Box::new(body) as Box<_>)
+        }
+    }
+
+    fn catch_all_arm_deserialize(
+        self_ident: &Ident,
+        discriminant: Value,
+        variant: &Variant,
+        store_disc: bool,
+    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+        let variant_ident = &variant.ident;
+        let pat = parse_quote!(_);
+        if store_disc {
+            let struct_ty = parse_quote!(#self_ident::#variant_ident);
+            let body = move |region: &mut Region| {
+                let value = struct_(region, struct_ty, vec![(syn::Member::from(0), discriminant)]);
+                ok(region, value)
+            };
+            (pat, None, Box::new(body) as Box<_>)
+        } else {
+            let struct_ty = parse_quote!(#self_ident::#variant_ident);
+            let body = move |region: &mut Region| {
+                let value = struct_(region, struct_ty, vec![]);
+                ok(region, value)
+            };
+            (pat, None, Box::new(body) as Box<_>)
+        }
+    }
+
+    fn normal_arm_deserialize(
+        self_ident: &Ident,
+        variant: &Variant,
+        deserializer: Value,
+    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+        let variant_ident = variant.ident.clone();
+        let pat = parse_quote!(discriminant);
+        let discriminant_expr = &variant.discriminant;
+        let guard_expr = parse_quote!(discriminant == #discriminant_expr);
+        let struct_ty = parse_quote!(#self_ident::#variant_ident);
+        let content = variant.content.as_ref().cloned();
+        let self_ident = self_ident.clone();
+        let body = move |region: &mut Region| {
+            if let Some(content) = content {
+                use_(region, parse_quote!(#self_ident::#variant_ident));
+                content.deserialize_members(region, deserializer)
+            } else {
+                let value = struct_(region, struct_ty, vec![]);
+                ok(region, value)
+            }
+        };
+        (pat, Some(guard_expr), Box::new(body) as Box<_>)
     }
 }
 
@@ -67,8 +185,11 @@ impl TryFrom<parse::Enum> for Enum {
 
         let discriminants = compute_discriminants(value.variants.iter_mut().map(|variant| variant.discriminant.take()));
         let variants = std::iter::zip(value.variants.into_iter(), discriminants.into_iter())
-            .map(|(variant, discriminant)| Variant { ident: variant.ident, discriminant })
-            .collect();
+            .map(|(variant, discriminant)| -> Result<Variant, syn::Error> {
+                let content = variant.content.map(|content| Struct::try_from(content)).transpose()?;
+                Ok(Variant { ident: variant.ident, discriminant, content })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             ident: value.ident,
             storage_ty,
@@ -84,49 +205,15 @@ impl ToSerializeOp for Enum {
     type Args = ();
     fn to_serialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
         impl_serialize(region, self.ident.clone(), self.generics.clone(), |region, serializer| {
-            let storage_ty = &self.storage_ty;
-
             let result = with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
                 let self_ = self_(region);
-                let arms = self
+                let normal_arms = self
                     .normal_variants()
-                    .map(|variant| {
-                        let self_ident = &self.ident;
-                        let variant_ident = &variant.ident;
-                        let pat = parse_quote!(#self_ident::#variant_ident);
-                        let discriminant_expr = variant.discriminant.clone();
-                        let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
-                        let body = move |region: &mut Region| {
-                            let discriminant = custom_expr(region, discriminant_cast);
-                            let disc_ref = ref_(region, discriminant);
-                            serialize_object(region, serializer, disc_ref)
-                        };
-                        (pat, None, Box::new(body) as Box<_>)
-                    })
-                    .chain(self.catch_all_variant().map(|(variant, store_disc)| {
-                        let self_ident = &self.ident;
-                        let variant_ident = &variant.ident;
-                        if store_disc {
-                            let pat = parse_quote!(#self_ident::#variant_ident(value));
-                            let value_expr = parse_quote!(value);
-                            let body = move |region: &mut Region| {
-                                let discriminant = custom_expr(region, value_expr);
-                                let disc_ref = ref_(region, discriminant);
-                                serialize_object(region, serializer, disc_ref)
-                            };
-                            (pat, None, Box::new(body) as Box<_>)
-                        } else {
-                            let pat = parse_quote!(#self_ident::#variant_ident);
-                            let discriminant_expr = variant.discriminant.clone();
-                            let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
-                            let body = move |region: &mut Region| {
-                                let discriminant = custom_expr(region, discriminant_cast);
-                                let disc_ref = ref_(region, discriminant);
-                                serialize_object(region, serializer, disc_ref)
-                            };
-                            (pat, None, Box::new(body) as Box<_>)
-                        }
-                    }));
+                    .map(|variant| Self::normal_arm_serialize(&self.ident, &self.storage_ty, serializer, variant));
+                let catch_all_arm = self.catch_all_variant().map(|(variant, store_disc)| {
+                    Self::catch_all_arm_serialize(&self.ident, &self.storage_ty, serializer, variant, store_disc)
+                });
+                let arms = normal_arms.chain(catch_all_arm);
                 match_(region, self_, arms)
             });
             let _ = yield_(region, vec![result]);
@@ -142,56 +229,28 @@ impl ToDeserializeOp for Enum {
             let result = with_maybe_byte_order(region, deserializer, self.byte_order, false, |region, deserializer| {
                 let maybe_discriminant = deserialize_object(region, deserializer, self.storage_ty.clone());
                 let discriminant = try_(region, maybe_discriminant);
-                let unmatched = self
+                let normal_arms = self
+                    .normal_variants()
+                    .map(|variant| Self::normal_arm_deserialize(&self.ident, variant, deserializer));
+                let unmatched_arm = self
                     .catch_all_variant()
                     .map(|(variant, store_disc)| {
-                        let self_ident = &self.ident;
-                        let variant_ident = &variant.ident;
-                        let pat = parse_quote!(_);
-                        if store_disc {
-                            let struct_ty = parse_quote!(#self_ident::#variant_ident);
-                            let body = move |region: &mut Region| {
-                                let value = struct_(region, struct_ty, vec![(syn::Member::from(0), discriminant)]);
-                                ok(region, value)
-                            };
-                            (pat, None, Box::new(body) as Box<_>)
-                        } else {
-                            let struct_ty = parse_quote!(#self_ident::#variant_ident);
-                            let body = move |region: &mut Region| {
-                                let value = struct_(region, struct_ty, vec![]);
-                                ok(region, value)
-                            };
-                            (pat, None, Box::new(body) as Box<_>)
-                        }
+                        Self::catch_all_arm_deserialize(&self.ident, discriminant, variant, store_disc)
                     })
-                    .unwrap_or_else(|| {
-                        let pat = parse_quote!(_);
-                        let body =
-                            move |region: &mut Region| error(region, deserializer, "invalid enum discriminant".into());
-                        (pat, None, Box::new(body) as Box<_>)
-                    });
-                let arms = self
-                    .normal_variants()
-                    .map(|variant| {
-                        let self_ident = &self.ident;
-                        let variant_ident = &variant.ident;
-                        let pat = parse_quote!(discriminant);
-                        let discriminant_expr = &variant.discriminant;
-                        let guard_expr = parse_quote!(discriminant == #discriminant_expr);
-                        let struct_ty = parse_quote!(#self_ident::#variant_ident);
-                        let body = move |region: &mut Region| {
-                            let value = struct_(region, struct_ty, vec![]);
-                            ok(region, value)
-                        };
-                        (pat, Some(guard_expr), Box::new(body) as Box<_>)
-                    })
-                    .chain(std::iter::once(unmatched));
+                    .unwrap_or_else(|| mismatch_arm_deserialize(deserializer));
+                let arms = normal_arms.chain(std::iter::once(unmatched_arm));
                 match_(region, discriminant, arms)
             });
             let _ = yield_(region, vec![result]);
         });
         vec![]
     }
+}
+
+fn mismatch_arm_deserialize(deserializer: Value) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+    let pat = parse_quote!(_);
+    let body = move |region: &mut Region| error(region, deserializer, "invalid enum discriminant".into());
+    (pat, None, Box::new(body) as Box<_>)
 }
 
 impl Enum {
@@ -300,7 +359,7 @@ fn literal_int_expr(value: isize) -> Expr {
 
 #[cfg(test)]
 mod tests {
-    use crate::ir::pattern_match::assert_matches;
+    use crate::{ir::pattern_match::assert_matches, r#struct::ast::Field};
 
     use super::*;
 
@@ -335,8 +394,8 @@ mod tests {
             byte_order: None,
             catch_all: None,
             variants: vec![
-                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0) },
-                Variant { ident: parse_quote!(B), discriminant: parse_quote!(1) },
+                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0), content: None },
+                Variant { ident: parse_quote!(B), discriminant: parse_quote!(1), content: None },
             ],
         }
     }
@@ -349,8 +408,8 @@ mod tests {
             byte_order: None,
             catch_all: Some((parse_quote!(CatchAll), false)),
             variants: vec![
-                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0) },
-                Variant { ident: parse_quote!(CatchAll), discriminant: parse_quote!(1) },
+                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0), content: None },
+                Variant { ident: parse_quote!(CatchAll), discriminant: parse_quote!(1), content: None },
             ],
         }
     }
@@ -363,8 +422,58 @@ mod tests {
             byte_order: None,
             catch_all: Some((parse_quote!(CatchAll), true)),
             variants: vec![
-                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0) },
-                Variant { ident: parse_quote!(CatchAll), discriminant: parse_quote!(1) },
+                Variant { ident: parse_quote!(A), discriminant: parse_quote!(0), content: None },
+                Variant { ident: parse_quote!(CatchAll), discriminant: parse_quote!(1), content: None },
+            ],
+        }
+    }
+
+    fn create_fielded() -> Enum {
+        Enum {
+            ident: parse_quote!(Test),
+            storage_ty: parse_quote!(u16),
+            generics: Generics::default(),
+            byte_order: None,
+            catch_all: Some((parse_quote!(CatchAll), true)),
+            variants: vec![
+                Variant {
+                    ident: parse_quote!(A),
+                    discriminant: parse_quote!(0),
+                    content: Some(Struct {
+                        ident: parse_quote!(A),
+                        generics: Generics::default(),
+                        byte_order: None,
+                        len: None,
+                        round: None,
+                        fields: vec![Field::Direct {
+                            member: parse_quote!(0),
+                            ty: parse_quote!(u8),
+                            byte_order: None,
+                            offset: None,
+                            align: None,
+                            round: None,
+                        }],
+                    }),
+                },
+                Variant {
+                    ident: parse_quote!(B),
+                    discriminant: parse_quote!(1),
+                    content: Some(Struct {
+                        ident: parse_quote!(B),
+                        generics: Generics::default(),
+                        byte_order: None,
+                        len: None,
+                        round: None,
+                        fields: vec![Field::Direct {
+                            member: parse_quote!(b),
+                            ty: parse_quote!(i8),
+                            byte_order: None,
+                            offset: None,
+                            align: None,
+                            round: None,
+                        }],
+                    }),
+                },
             ],
         }
     }
@@ -435,8 +544,6 @@ mod tests {
             }
         }
         ";
-        println!("{}", region.to_token_stream_formatted(false).to_string());
-
         assert_matches!(op, pattern);
     }
 
@@ -561,6 +668,127 @@ mod tests {
                         %result_ca = struct [Test :: CatchAll, 0] %discriminant
                         %result_ca_ok = ok %result_ca
                         yield %result_ca_ok
+                    }
+                }
+                yield %result
+            }
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_serialize_op_fielded() {
+        let input = create_fielded();
+
+        let mut region = Region::new(0);
+        input.to_serialize_op(&mut region, ());
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            impl_serialize [ Test ] |%serializer| {
+                %self = self
+                %span = match %self {
+                    Test :: A { 0 : m0 } => {
+                        %result_comp_a = serialize_composite %serializer |%se_inner_a| {
+                            %disc_a = custom_expr [(0) as u16]
+                            %disc_a_ref = ref %disc_a
+                            %result_disc_a = serialize_object %se_inner_a, %disc_a_ref
+                            %span_disc_a = try %result_disc_a
+
+                            %result_cont_a = serialize_composite %se_inner_a |%se_cont_a| {
+                                %m0 = symref [m0]
+                                %maybe_span_m0 = serialize_object %se_cont_a, %m0
+
+                                %span_m0 = try %maybe_span_m0
+                                %spans_a = tuple %span_m0
+                                %result_spans_a = ok %spans_a
+                                yield %result_spans_a
+                            }
+                            %span_cont_a = try %result_cont_a
+                            %span_cont_a0 = member [0, val] %span_cont_a
+                            %result_cont_a0 = ok %span_cont_a0
+                            yield %result_cont_a0
+                        }
+                        %span_comp_a = try %result_comp_a
+                        %span_all_a = member [0, val] %span_comp_a
+                        %result_a = ok %span_all_a
+                        yield %result_a
+                    }
+                    Test :: B { b } => {
+                        %result_comp_b = serialize_composite %serializer |%se_inner_b| {
+                            %disc_b = custom_expr [(1) as u16]
+                            %disc_b_ref = ref %disc_b
+                            %result_disc_b = serialize_object %se_inner_b, %disc_b_ref
+                            %span_disc_b = try %result_disc_b
+
+                            %result_cont_b = serialize_composite %se_inner_b |%se_cont_b| {
+                                %b = symref [b]
+                                %maybe_span_b = serialize_object %se_cont_b, %b
+
+                                %span_b = try %maybe_span_b
+                                %spans_b = tuple %span_b
+                                %result_spans_b = ok %spans_b
+                                yield %result_spans_b
+                            }
+                            %span_cont_b = try %result_cont_b
+                            %span_cont_b0 = member [0, val] %span_cont_b
+                            %result_cont_b0 = ok %span_cont_b0
+                            yield %result_cont_b0
+                        }
+                        %span_comp_b = try %result_comp_b
+                        %span_all_b = member [0, val] %span_comp_b
+                        %result_b = ok %span_all_b
+                        yield %result_b
+                    }
+                }
+                yield %span
+            }
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_deserialize_op_fielded() {
+        let input = create_fielded();
+
+        let mut region = Region::new(0);
+        input.to_deserialize_op(&mut region, ());
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            impl_deserialize [ Test ] |%deserializer| {
+                %maybe_discriminant = deserialize_object [u16] %deserializer
+                %discriminant = try %maybe_discriminant
+                %result = match %discriminant {
+                    discriminant if discriminant == 0 => {
+                        use [Test :: A]
+                        %result_cont_a = deserialize_composite %deserializer |%de_cont_a| {
+                            %result_m0 = deserialize_object [u8] %de_cont_a
+                            %m0 = try %result_m0
+                            %struct_a = struct [A, 0] %m0
+                            %result_struct_a = ok %struct_a
+                            yield %result_struct_a
+                        }
+                        yield %result_cont_a
+                    }
+                    discriminant if discriminant == 1 => {
+                        use [Test :: B]
+                        %result_cont_b = deserialize_composite %deserializer |%de_cont_b| {
+                            %result_b = deserialize_object [i8] %de_cont_b
+                            %b = try %result_b
+                            %struct_b = struct [B, b] %b
+                            %result_struct_b = ok %struct_b
+                            yield %result_struct_b
+                        }
+                        yield %result_cont_b
+                    }
+                    _ => {
+                        %result_err = error [invalid enum discriminant] %deserializer
+                        yield %result_err
                     }
                 }
                 yield %result

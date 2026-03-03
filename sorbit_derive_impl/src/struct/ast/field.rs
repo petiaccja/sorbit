@@ -11,6 +11,7 @@ use crate::ir::ops::{
 };
 use crate::utility::member_to_ident;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Field {
     Direct {
         member: Member,
@@ -33,6 +34,7 @@ pub enum Field {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitFieldMember {
     pub member: Member,
     pub ty: Type,
@@ -144,8 +146,6 @@ mod tests {
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
         let op = format!("{:#}", region);
-
-        println!("{op}");
 
         let pattern = "
         {
@@ -271,7 +271,6 @@ mod tests {
             yield %res_ok
         }
         ";
-        println!("{op}");
         assert_matches!(op, pattern);
     }
 

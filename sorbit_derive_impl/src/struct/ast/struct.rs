@@ -15,6 +15,7 @@ use super::field::Field;
 use super::field_group::group_fields;
 use crate::ir::dag::{ToDeserializeOp, ToSerializeOp};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
     pub ident: Ident,
     pub generics: Generics,
@@ -117,7 +118,7 @@ impl Struct {
         })
     }
 
-    fn members(&self) -> Vec<&Member> {
+    pub fn members(&self) -> Vec<&Member> {
         let mut result = Vec::new();
         for field in &self.fields {
             match field {
