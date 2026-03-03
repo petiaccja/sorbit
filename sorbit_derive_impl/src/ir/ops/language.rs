@@ -1,6 +1,10 @@
-use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::{
+    ir::dag::{Id, Operation, Region, Value},
+    utility::deconstruct_pattern,
+};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
+use syn::{Ident, Member, Path, Type};
 
 //------------------------------------------------------------------------------
 // Self
@@ -85,6 +89,145 @@ impl Operation for RefOp {
     fn to_token_stream(&self) -> TokenStream {
         let value = &self.value;
         quote! { &#value }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Use
+//------------------------------------------------------------------------------
+
+pub struct UseOp {
+    id: Id,
+    path: Path,
+}
+
+pub fn use_(region: &mut Region, path: Path) {
+    region.push(UseOp { id: Id::new(), path });
+}
+
+impl Operation for UseOp {
+    fn name(&self) -> &str {
+        "use"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.path.to_token_stream().to_string()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let path = &self.path;
+        quote! { use #path }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Destructure
+//------------------------------------------------------------------------------
+
+pub struct DestructureOp {
+    id: Id,
+    structured: Value,
+    ty: Type,
+    bindings: Vec<(Member, Ident)>,
+}
+
+pub fn destructure(region: &mut Region, structured: Value, ty: Type, bindings: Vec<(Member, Ident)>) {
+    region.push(DestructureOp { id: Id::new(), structured, ty, bindings });
+}
+
+impl Operation for DestructureOp {
+    fn name(&self) -> &str {
+        "destructure"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.structured]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        self.bindings
+            .iter()
+            .map(|binding| format!("{}:{}", binding.0.to_token_stream(), binding.1))
+            .collect()
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let structured = self.structured;
+        let members = self.bindings.iter().map(|(member, _)| member);
+        let pat = deconstruct_pattern(&self.ty, members.into_iter());
+        quote! { let #pat = #structured }
+    }
+}
+
+//------------------------------------------------------------------------------
+// SymrefOp
+//------------------------------------------------------------------------------
+
+pub struct SymrefOp {
+    id: Id,
+    sym: Ident,
+}
+
+pub fn symref(region: &mut Region, sym: Ident) -> Value {
+    region.push(SymrefOp { id: Id::new(), sym })[0]
+}
+
+impl Operation for SymrefOp {
+    fn name(&self) -> &str {
+        "symref"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.sym.to_string()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let sym = &self.sym;
+        quote! { #sym }
     }
 }
 

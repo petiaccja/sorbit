@@ -6,10 +6,12 @@ use crate::attribute::{BitNumbering, ByteOrder};
 use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset, with_maybe_rounding};
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ir::ops::{
-    self as ops, deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, self_,
-    serialize_object, try_, unpack_bit_field,
+    deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, serialize_object, symref,
+    try_, unpack_bit_field,
 };
+use crate::utility::member_to_ident;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Field {
     Direct {
         member: Member,
@@ -32,6 +34,7 @@ pub enum Field {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitFieldMember {
     pub member: Member,
     pub ty: Type,
@@ -43,9 +46,8 @@ impl ToSerializeOp for Field {
 
     fn to_serialize_op(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
         match self {
-            Field::Direct { member, ty: _, byte_order, offset, align, round } => {
-                let self_ = self_(region);
-                let object = ops::member(region, self_, member.clone(), true);
+            Field::Direct { member, byte_order, offset, align, round, .. } => {
+                let object = symref(region, member_to_ident(member.clone()));
                 with_maybe_offset(region, serializer.clone(), *offset, true);
                 with_maybe_alignment(region, serializer.clone(), *align, true);
                 let result = with_maybe_rounding(region, serializer, *round, true, |region, serializer| {
@@ -55,13 +57,11 @@ impl ToSerializeOp for Field {
                 });
                 vec![result]
             }
-            Field::Bit { ident: _, ty, byte_order, bit_numbering, offset, align, round, members } => {
-                let self_ = self_(region);
-
+            Field::Bit { ty, byte_order, bit_numbering, offset, align, round, members, .. } => {
                 let mut bit_field = empty_bit_field(region, ty.clone());
 
                 for member in members {
-                    let object = ops::member(region, self_, member.member.clone(), true);
+                    let object = symref(region, member_to_ident(member.member.clone()));
                     let maybe_new_bit_field =
                         pack_bit_field(region, object, bit_field, member.bits.clone(), *bit_numbering);
                     bit_field = try_(region, maybe_new_bit_field);
@@ -147,12 +147,9 @@ mod tests {
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
-        println!("{op}");
-
         let pattern = "
         {
-            %self = self
-            %foo = member [foo, ref] %self
+            %foo = symref [foo]
             %res = serialize_object %serializer, %foo
             yield %res
         }
@@ -179,8 +176,7 @@ mod tests {
 
         let pattern = "
         {
-            %self = self
-            %foo = member [foo, ref] %self
+            %foo = symref [foo]
             %res = byte_order[BigEndian] %serializer |%se_inner| {
                 %res_inner = serialize_object %se_inner, %foo
                 yield %res_inner
@@ -210,8 +206,7 @@ mod tests {
 
         let pattern = "
         {
-            %self = self
-            %foo = member [foo, ref] %self
+            %foo = symref [foo]
 
             %offset = pad [1, true] %serializer
             %try_offset = try %offset
@@ -253,8 +248,7 @@ mod tests {
 
         let pattern = "
         {
-            %self = self
-            %foo = member [foo, ref] %self
+            %foo = symref [foo]
 
             %offset = pad [1, true] %serializer
             %try_offset = try %offset
@@ -277,7 +271,6 @@ mod tests {
             yield %res_ok
         }
         ";
-        println!("{op}");
         assert_matches!(op, pattern);
     }
 
@@ -453,7 +446,6 @@ mod tests {
 
         let pattern = "
         {
-            %self = self
             %bf = empty_bit_field [u16]
             %raw = into_raw_bits %bf
             %ref_raw = ref %raw
@@ -476,15 +468,13 @@ mod tests {
 
         let pattern = "
         {
-            %self = self
-
             %bf0 = empty_bit_field [u16]
             
-            %foo = member [foo, ref] %self
+            %foo = symref [foo]
             %maybe_bf1 = pack_bit_field [4..7, LSB0] %foo %bf0
             %bf1 = try %maybe_bf1
 
-            %bar = member [bar, ref] %self
+            %bar = symref [bar]
             %maybe_bf2 = pack_bit_field [0..4, LSB0] %bar %bf1
             %bf2 = try %maybe_bf2
 

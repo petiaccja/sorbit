@@ -1,8 +1,8 @@
 use proc_macro2::TokenStream;
 use syn::DeriveInput;
 
-mod ast;
-mod parse;
+pub mod ast;
+pub mod parse;
 
 use crate::ir::dag::{Region, ToDeserializeOp as _, ToSerializeOp as _};
 

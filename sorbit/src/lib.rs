@@ -246,19 +246,30 @@
 //! #[repr(u8)]
 //! enum Example {
 //!     A = 1,
+//!     B(u32),
+//!     C{c: u16},
 //!     #[sorbit(catch_all)]
-//!     B(u8),
+//!     D(u8),
 //! }
 //! ```
 //!
 //! | Directive       | Values                         | Description |
 //! |-----------------|--------------------------------|-------------|
-//! | `byte_order`    | `big_endian`, `little_endian`  | The byte ordering of the enum's discriminant. (As well as the values in the enum's fields, although field variants are not yet supported.) |
+//! | `byte_order`    | `big_endian`, `little_endian`  | The byte ordering of the enum's discriminant, as well as the values in the enum's fields. The latter can be overridden by attributes on the variant itself. |
 //! | `repr`          | A primitive type               | The type used to represent and serialize the discriminant. See the [language documentation](https://doc.rust-lang.org/nomicon/other-reprs.html). |
 //! | `catch_all`     | - (`true` or `false` accepted) | Mark the variant as a catch all for unrecognized discriminant during deserialization. |
 //!
 //! The enum's repr is chosen as `isize` unless specified otherwise. This
 //! follows the Rust language's specification.
+//!
+//! The enum's variants may have unnamed (tuple-like) and named (struct-like)
+//! fields. In such cases, the variant is treated and parsed as a `struct`. All
+//! rules of `struct` serialization apply, so the variant can use all attributes
+//! related to structs and can also have bit fields.
+//!
+//! In the case of variants with fields, the discriminant is first serialized
+//! as usual, and it is followed immediately by the variant, which is serialized
+//! as a `struct``.
 //!
 //! The catch all variant may be a unit variant (i.e. `CatchAll`) or a tuple
 //! variant with exactly one field of the same type as the enum's repr
