@@ -240,18 +240,12 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
-                    byte_order: None,
-                    offset: None,
-                    align: None,
-                    round: None,
+                    layout_properties: Default::default(),
                 },
                 Field::Direct {
                     member: parse_quote!(bar),
                     ty: parse_quote!(i8),
-                    byte_order: None,
-                    offset: None,
-                    align: None,
-                    round: None,
+                    layout_properties: Default::default(),
                 },
             ],
         };

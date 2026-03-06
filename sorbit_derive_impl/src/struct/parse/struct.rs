@@ -143,10 +143,7 @@ mod tests {
             fields: vec![Field::Direct {
                 ident: parse_quote!(field),
                 ty: parse_quote!(u8),
-                byte_order: None,
-                offset: None,
-                align: None,
-                round: None,
+                layout_properties: Default::default(),
             }],
         };
         assert_eq!(actual, expected);

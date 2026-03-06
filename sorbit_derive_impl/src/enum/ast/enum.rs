@@ -448,10 +448,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(0),
                             ty: parse_quote!(u8),
-                            byte_order: None,
-                            offset: None,
-                            align: None,
-                            round: None,
+                            layout_properties: Default::default(),
                         }],
                     }),
                 },
@@ -467,10 +464,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(b),
                             ty: parse_quote!(i8),
-                            byte_order: None,
-                            offset: None,
-                            align: None,
-                            round: None,
+                            layout_properties: Default::default(),
                         }],
                     }),
                 },
