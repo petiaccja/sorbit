@@ -343,6 +343,7 @@ pub mod io;
 pub mod ser_de;
 pub use sorbit_derive::{Deserialize, PackInto, Serialize, UnpackFrom};
 pub mod stream_ser_de;
+pub mod sized;
 
 mod types;
 
