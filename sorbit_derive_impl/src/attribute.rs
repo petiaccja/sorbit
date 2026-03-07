@@ -8,8 +8,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{
-    Attribute, Expr, ExprCall, ExprLit, ExprRange, Ident, Lit, LitBool, Meta, Path, RangeLimits, Type, TypePath,
-    parse_quote,
+    Attribute, Expr, ExprCall, ExprLit, ExprRange, Ident, Lit, LitBool, Member, Meta, Path, RangeLimits, Type,
+    TypePath, parse_quote,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,13 +27,33 @@ pub enum BitNumbering {
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum Transform {
-    /// The value of this field as serialziation is simply its value as is.
+    /// Leave the value of this field as is.
     #[default]
     None,
-    /// The value of this field is calculated at serialization time as the number of items of `.0`.
-    Length(Ident),
-    /// The value of this field is calculated at serialization time as the number of bytes of `.0`.
-    ByteCount(Ident),
+    /// Set the value of this field to the length of another field.
+    /// The other field should be a sequential collection.
+    Length(Member),
+    /// Set the value of this field to the byte count of another field.
+    /// The other field should be a sequential collection.
+    ByteCount(Member),
+    /// Set the length of this field as the value given by another field.
+    /// This field should be a sequential collection.
+    LengthBy(Member),
+    /// Set the byte count of this field as the value given by another field.
+    /// This field should be a sequential collection.
+    ByteCountBy(Member),
+}
+
+impl std::fmt::Display for Transform {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transform::None => write!(f, "same"),
+            Transform::Length(member) => write!(f, "len({})", member.to_token_stream()),
+            Transform::ByteCount(member) => write!(f, "byte_count({})", member.to_token_stream()),
+            Transform::LengthBy(member) => write!(f, "len_by({})", member.to_token_stream()),
+            Transform::ByteCountBy(member) => write!(f, "byte_count_by({})", member.to_token_stream()),
+        }
+    }
 }
 
 pub mod path {
@@ -199,8 +219,12 @@ where
 
 pub fn as_byte_order(expr: &Expr) -> Result<ByteOrder, syn::Error> {
     let ident = as_ident(expr)?;
-    match ident.to_string().as_str() {
+    match ident.to_string().to_lowercase().as_str() {
+        "be" => Ok(ByteOrder::BigEndian),
+        "big" => Ok(ByteOrder::BigEndian),
         "big_endian" => Ok(ByteOrder::BigEndian),
+        "le" => Ok(ByteOrder::LittleEndian),
+        "little" => Ok(ByteOrder::LittleEndian),
         "little_endian" => Ok(ByteOrder::LittleEndian),
         _ => Err(syn::Error::new(expr.span(), "byte order may be `big_endian`, `little_endian`, or `inherited`")),
     }
@@ -222,20 +246,31 @@ impl std::fmt::Display for ByteOrder {
 }
 
 pub fn as_transform(expr: &Expr) -> Result<Transform, syn::Error> {
-    const MESSAGE: &str = "must be either `same`, `len(<FIELD>)`, or `byte_count(<FIELD>)`";
+    const MESSAGE: &str = "must be either `same`, `len(<IDENT/U32>)`, or `byte_count(<IDENT/U32>)`";
     let error = || syn::Error::new(expr.span(), MESSAGE);
     match expr {
         Expr::Path(path) => (path == &parse_quote!(same)).then_some(Transform::None).ok_or_else(error),
         Expr::Call(ExprCall { func, args, .. }) => {
             if args.len() != 1 {
-                Err(error())
-            } else if let (Expr::Path(func), Some(Expr::Path(field))) = (func.as_ref(), args.first()) {
-                let field = field.path.get_ident().ok_or_else(error)?;
-                if func == &parse_quote!(len) {
-                    Ok(Transform::Length(field.clone()))
-                } else {
-                    Ok(Transform::ByteCount(field.clone()))
-                }
+                return Err(error());
+            };
+            let Expr::Path(func) = func.as_ref() else {
+                return Err(error());
+            };
+            let field = match args.first() {
+                Some(Expr::Path(field)) => Member::from(field.path.get_ident().ok_or_else(error)?.clone()),
+                Some(Expr::Lit(ExprLit { lit: Lit::Int(index), .. })) => Member::from(index.base10_parse::<usize>()?),
+                _ => return Err(error()),
+            };
+
+            if func == &parse_quote!(len) {
+                Ok(Transform::Length(field.clone()))
+            } else if func == &parse_quote!(byte_count) {
+                Ok(Transform::ByteCount(field.clone()))
+            } else if func == &parse_quote!(len_by) {
+                Ok(Transform::LengthBy(field.clone()))
+            } else if func == &parse_quote!(byte_count_by) {
+                Ok(Transform::ByteCountBy(field.clone()))
             } else {
                 Err(error())
             }

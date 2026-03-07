@@ -1,3 +1,4 @@
+use proc_macro2::Span;
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -40,6 +41,37 @@ pub enum Field {
         storage_properties: BitFieldStorageProperties,
         layout_properties: FieldLayoutProperties,
     },
+}
+
+impl Field {
+    pub fn ident(&self) -> Option<&Ident> {
+        match self {
+            Field::Direct { ident, .. } => ident.as_ref(),
+            Field::Bit { ident, .. } => ident.as_ref(),
+        }
+    }
+
+    pub fn transform(&self) -> &Transform {
+        match self {
+            Field::Direct { transform, .. } => transform,
+            Field::Bit { transform, .. } => transform,
+        }
+    }
+
+    pub fn transform_mut(&mut self) -> &mut Transform {
+        match self {
+            Field::Direct { transform, .. } => transform,
+            Field::Bit { transform, .. } => transform,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        let (ident, ty) = match self {
+            Field::Direct { ident, ty, .. } => (ident, ty),
+            Field::Bit { ident, ty, .. } => (ident, ty),
+        };
+        ident.as_ref().map(|ident| ident.span()).unwrap_or_else(|| ty.span())
+    }
 }
 
 impl TryFrom<syn::Field> for Field {

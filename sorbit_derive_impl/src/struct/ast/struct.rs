@@ -7,12 +7,13 @@ use crate::ir::ops::{
     deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, self_, serialize_composite,
     struct_, success, try_, tuple, yield_,
 };
+use crate::r#struct::ast::conversion::add_symmetric_transforms;
 use crate::r#struct::ast::field::BitFieldMember;
 use crate::utility::{ident_to_type, member_to_ident};
 
 use super::super::parse;
+use super::conversion::to_layout_fields;
 use super::field::Field;
-use super::field_group::group_fields;
 use crate::ir::dag::{ToDeserializeOp, ToSerializeOp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,8 +29,9 @@ pub struct Struct {
 impl TryFrom<parse::Struct> for Struct {
     type Error = syn::Error;
     fn try_from(value: parse::Struct) -> Result<Self, Self::Error> {
-        let field_groups = group_fields(value.fields.into_iter())?;
-        let fields = field_groups
+        let symmetric_fields = add_symmetric_transforms(value.fields)?;
+        let layout_fields = to_layout_fields(symmetric_fields.into_iter())?;
+        let fields = layout_fields
             .into_iter()
             .map(|field_group| field_group.into_field())
             .collect::<Result<Vec<_>, _>>()?;

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use proc_macro2::Span;
@@ -12,7 +12,61 @@ use crate::r#struct::ast::field::BitFieldMember;
 use crate::r#struct::parse::{BitFieldStorageProperties, FieldLayoutProperties};
 use crate::utility::to_member;
 
-pub fn group_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Vec<LayoutField>, syn::Error> {
+pub fn add_symmetric_transforms(mut fields: Vec<parse::Field>) -> Result<Vec<parse::Field>, syn::Error> {
+    let members: Vec<_> = fields
+        .iter()
+        .enumerate()
+        .map(|(index, field)| to_member(field.ident().cloned(), index, field.span()))
+        .collect();
+
+    let member_to_index: HashMap<_, _> = members.iter().enumerate().map(|(index, member)| (member, index)).collect();
+
+    let find_pair = |member: &Member| {
+        member_to_index
+            .get(member)
+            .cloned()
+            .ok_or_else(|| syn::Error::new(member.span(), "structure has no such field"))
+    };
+
+    for field_idx in 0..fields.len() {
+        use Transform::{ByteCount, ByteCountBy, Length, LengthBy};
+        let (pair_idx, pair_follows, pair_desired_transform) = match fields[field_idx].transform() {
+            Transform::None => continue,
+            Length(member) => (find_pair(member)?, true, LengthBy(members[field_idx].clone())),
+            ByteCount(member) => (find_pair(member)?, true, ByteCountBy(members[field_idx].clone())),
+            LengthBy(member) => (find_pair(member)?, false, Length(members[field_idx].clone())),
+            ByteCountBy(member) => (find_pair(member)?, false, ByteCount(members[field_idx].clone())),
+        };
+
+        if pair_follows && !(field_idx < pair_idx) {
+            return Err(syn::Error::new(
+                fields[field_idx].span(),
+                "`len` or `byte_count` must always precede the collection field",
+            ));
+        }
+        if !pair_follows && !(pair_idx < field_idx) {
+            return Err(syn::Error::new(
+                fields[field_idx].span(),
+                "`len_by` or `byte_count_by` must always follow the length or byte count field",
+            ));
+        }
+
+        let pair = &mut fields[pair_idx];
+        let pair_current_transform = pair.transform_mut();
+        if let Transform::None = pair_current_transform {
+            *pair_current_transform = pair_desired_transform;
+        } else if *pair_current_transform != pair_desired_transform {
+            return Err(syn::Error::new(
+                pair.span(),
+                format!("value transform is breaking symmetry, expected `{}`", pair_desired_transform),
+            ));
+        }
+    }
+
+    Ok(fields)
+}
+
+pub fn to_layout_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Vec<LayoutField>, syn::Error> {
     let mut layout_fields = Vec::new();
     let mut layout_field_idents = HashSet::new();
 
@@ -150,6 +204,97 @@ fn all_same_or_error<T: PartialEq>(
 mod tests {
     use super::*;
 
+    mod asymmetric_transforms {
+        use super::*;
+
+        use syn::parse_quote;
+
+        use crate::attribute::Transform;
+
+        fn create_value(transform: Transform) -> parse::Field {
+            parse::Field::Direct {
+                ident: Some(parse_quote!(value)),
+                ty: parse_quote!(u8),
+                transform,
+                layout_properties: Default::default(),
+            }
+        }
+
+        fn create_collection(transform: Transform) -> parse::Field {
+            parse::Field::Direct {
+                ident: Some(parse_quote!(collection)),
+                ty: parse_quote!(u8),
+                transform,
+                layout_properties: Default::default(),
+            }
+        }
+
+        #[test]
+        fn len_before_collection() {
+            let input = vec![
+                create_value(Transform::Length(parse_quote!(collection))),
+                create_collection(Transform::None),
+            ];
+            let expected = vec![
+                create_value(Transform::Length(parse_quote!(collection))),
+                create_collection(Transform::LengthBy(parse_quote!(value))),
+            ];
+            let actual = add_symmetric_transforms(input).unwrap();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn len_after_collection() {
+            let input = vec![
+                create_collection(Transform::None),
+                create_value(Transform::Length(parse_quote!(collection))),
+            ];
+            assert!(add_symmetric_transforms(input).is_err());
+        }
+
+        #[test]
+        fn byte_count_before_collection() {
+            let input = vec![
+                create_value(Transform::ByteCount(parse_quote!(collection))),
+                create_collection(Transform::None),
+            ];
+            let expected = vec![
+                create_value(Transform::ByteCount(parse_quote!(collection))),
+                create_collection(Transform::ByteCountBy(parse_quote!(value))),
+            ];
+            let actual = add_symmetric_transforms(input).unwrap();
+            assert_eq!(actual, expected);
+        }
+
+        #[test]
+        fn byte_count_after_collection() {
+            let input = vec![
+                create_collection(Transform::None),
+                create_value(Transform::ByteCount(parse_quote!(collection))),
+            ];
+            assert!(add_symmetric_transforms(input).is_err());
+        }
+
+        #[test]
+        fn matched() {
+            let input = vec![
+                create_value(Transform::ByteCount(parse_quote!(collection))),
+                create_collection(Transform::ByteCountBy(parse_quote!(value))),
+            ];
+            let actual = add_symmetric_transforms(input.clone()).unwrap();
+            assert_eq!(actual, input);
+        }
+
+        #[test]
+        fn conflicting() {
+            let input = vec![
+                create_value(Transform::ByteCount(parse_quote!(collection))),
+                create_collection(Transform::LengthBy(parse_quote!(value))),
+            ];
+            assert!(add_symmetric_transforms(input.clone()).is_err());
+        }
+    }
+
     mod group_fields {
         use syn::parse_quote;
 
@@ -182,7 +327,7 @@ mod tests {
                     layout_properties: Default::default(),
                 },
             ];
-            let actual = group_fields(fields.into_iter()).unwrap();
+            let actual = to_layout_fields(fields.into_iter()).unwrap();
             let expected = [
                 LayoutField::Direct {
                     member: parse_quote!(foo),
@@ -242,7 +387,7 @@ mod tests {
                     layout_properties: Default::default(),
                 },
             ];
-            let actual = group_fields(fields.into_iter()).unwrap();
+            let actual = to_layout_fields(fields.into_iter()).unwrap();
             let expected = [
                 LayoutField::Bit {
                     ident: parse_quote!(_bit_field_1),
@@ -312,7 +457,7 @@ mod tests {
                     layout_properties: Default::default(),
                 },
             ];
-            group_fields(fields.into_iter()).unwrap();
+            to_layout_fields(fields.into_iter()).unwrap();
         }
     }
 
