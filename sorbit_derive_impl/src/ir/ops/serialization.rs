@@ -1,12 +1,102 @@
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
-use crate::attribute::{BitNumbering, ByteOrder};
+use crate::attribute::ByteOrder;
 use crate::ir::constants::{
-    BIG_ENDIAN, BIT_FIELD_TYPE, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT,
-    SERIALIZER_TRAIT, TRACE_ERROR_TRAIT,
+    BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
+    TRACE_ERROR_TRAIT,
 };
 use crate::ir::dag::{Id, Operation, Region, Value};
+
+//------------------------------------------------------------------------------
+// Success
+//------------------------------------------------------------------------------
+
+struct SuccessOp {
+    id: Id,
+    serializer: Value,
+}
+
+pub fn success(region: &mut Region, serializer: Value) -> Value {
+    region.push(SuccessOp { id: Id::new(), serializer })[0]
+}
+
+impl Operation for SuccessOp {
+    fn name(&self) -> &str {
+        "success"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.serializer]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let serializer = &self.serializer;
+        quote! { #SERIALIZER_TRAIT::success(#serializer) }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Error
+//------------------------------------------------------------------------------
+
+struct ErrorOp {
+    id: Id,
+    deserializer: Value,
+    message: String,
+}
+
+pub fn error(region: &mut Region, deserializer: Value, message: String) -> Value {
+    region.push(ErrorOp { id: Id::new(), deserializer, message })[0]
+}
+
+impl Operation for ErrorOp {
+    fn name(&self) -> &str {
+        "error"
+    }
+
+    fn id(&self) -> Id {
+        self.id
+    }
+
+    fn inputs(&self) -> Vec<Value> {
+        vec![self.deserializer]
+    }
+
+    fn outputs(&self) -> Vec<Value> {
+        vec![self.id.value(0)]
+    }
+
+    fn regions(&self) -> Vec<&Region> {
+        vec![]
+    }
+
+    fn attributes(&self) -> Vec<String> {
+        vec![self.message.clone()]
+    }
+
+    fn to_token_stream(&self) -> TokenStream {
+        let deserializer = &self.deserializer;
+        let message = &self.message;
+        quote! { #DESERIALIZER_TRAIT::error(#deserializer, #message) }
+    }
+}
 
 //------------------------------------------------------------------------------
 // Pad
@@ -153,96 +243,6 @@ impl Operation for AnnotateResultOp {
         let result = &self.result;
         let annotation = &self.annotation;
         quote! { #result.map_err(|err| #TRACE_ERROR_TRAIT::annotate(err, #annotation)) }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Success
-//------------------------------------------------------------------------------
-
-struct SuccessOp {
-    id: Id,
-    serializer: Value,
-}
-
-pub fn success(region: &mut Region, serializer: Value) -> Value {
-    region.push(SuccessOp { id: Id::new(), serializer })[0]
-}
-
-impl Operation for SuccessOp {
-    fn name(&self) -> &str {
-        "success"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let serializer = &self.serializer;
-        quote! { #SERIALIZER_TRAIT::success(#serializer) }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Error
-//------------------------------------------------------------------------------
-
-struct ErrorOp {
-    id: Id,
-    deserializer: Value,
-    message: String,
-}
-
-pub fn error(region: &mut Region, deserializer: Value, message: String) -> Value {
-    region.push(ErrorOp { id: Id::new(), deserializer, message })[0]
-}
-
-impl Operation for ErrorOp {
-    fn name(&self) -> &str {
-        "error"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.message.clone()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let deserializer = &self.deserializer;
-        let message = &self.message;
-        quote! { #DESERIALIZER_TRAIT::error(#deserializer, #message) }
     }
 }
 
@@ -526,275 +526,5 @@ impl Operation for ByteOrderOp {
                 })
             },
         }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Empty bit field
-//------------------------------------------------------------------------------
-
-struct EmptyBitFieldOp {
-    id: Id,
-    packed_ty: syn::Type,
-}
-
-pub fn empty_bit_field(region: &mut Region, packed_ty: syn::Type) -> Value {
-    region.push(EmptyBitFieldOp { id: Id::new(), packed_ty })[0]
-}
-
-impl Operation for EmptyBitFieldOp {
-    fn name(&self) -> &str {
-        "empty_bit_field"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.packed_ty.to_token_stream().to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let packed_ty = &self.packed_ty;
-        quote! { #BIT_FIELD_TYPE::<#packed_ty>::new() }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Into bit field
-//------------------------------------------------------------------------------
-
-struct IntoBitFieldOp {
-    id: Id,
-    packed: Value,
-}
-
-pub fn into_bit_field(region: &mut Region, packed: Value) -> Value {
-    region.push(IntoBitFieldOp { id: Id::new(), packed })[0]
-}
-
-impl Operation for IntoBitFieldOp {
-    fn name(&self) -> &str {
-        "into_bit_field"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.packed]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let packed = &self.packed;
-        quote! { #BIT_FIELD_TYPE::from_bits(#packed) }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Into raw bits
-//------------------------------------------------------------------------------
-
-struct IntoRawBitsOp {
-    id: Id,
-    bit_field: Value,
-}
-
-pub fn into_raw_bits(region: &mut Region, bit_field: Value) -> Value {
-    region.push(IntoRawBitsOp { id: Id::new(), bit_field })[0]
-}
-
-impl Operation for IntoRawBitsOp {
-    fn name(&self) -> &str {
-        "into_raw_bits"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.bit_field]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let bit_field = &self.bit_field;
-        quote! { #bit_field.into_bits() }
-    }
-}
-
-//------------------------------------------------------------------------------
-// Pack bit field
-//------------------------------------------------------------------------------
-
-struct PackBitFieldOp {
-    id: Id,
-    value: Value,
-    bit_field: Value,
-    bits: std::ops::Range<u8>,
-    bit_numbering: BitNumbering,
-}
-
-pub fn pack_bit_field(
-    region: &mut Region,
-    value: Value,
-    bit_field: Value,
-    bits: std::ops::Range<u8>,
-    bit_numbering: BitNumbering,
-) -> Value {
-    region.push(PackBitFieldOp { id: Id::new(), value, bit_field, bits, bit_numbering })[0]
-}
-
-impl Operation for PackBitFieldOp {
-    fn name(&self) -> &str {
-        "pack_bit_field"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.value, self.bit_field]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![
-            format!("{}..{}", self.bits.start, self.bits.end),
-            format!("{:?}", self.bit_numbering),
-        ]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let value = &self.value;
-        let bit_field = &self.bit_field;
-        let start = self.bits.start;
-        let end = self.bits.end;
-        let bit_range = bit_range_to_token_stream(quote! {bit_field}, start, end, self.bit_numbering);
-        quote! {
-            {
-                let mut bit_field = #bit_field;
-                bit_field.pack(&#value, #bit_range)
-                          .map_err(|err| err.into())
-                          .map(|_| bit_field)
-            }
-        }
-    }
-}
-
-fn bit_range_to_token_stream(bit_field: impl ToTokens, start: u8, end: u8, bit_numbering: BitNumbering) -> TokenStream {
-    let bit_range = match bit_numbering {
-        BitNumbering::MSB0 => {
-            quote! { (#bit_field.bit_size_of() as u8 - #end)..(#bit_field.bit_size_of() as u8 - #start) }
-        }
-        BitNumbering::LSB0 => quote! { #start..#end },
-    };
-    bit_range
-}
-
-//------------------------------------------------------------------------------
-// Unpack bit field
-//------------------------------------------------------------------------------
-
-struct UnpackBitFieldOp {
-    id: Id,
-    bit_field: Value,
-    ty: syn::Type,
-    bits: std::ops::Range<u8>,
-    bit_numbering: BitNumbering,
-}
-
-pub fn unpack_bit_field(
-    region: &mut Region,
-    bit_field: Value,
-    ty: syn::Type,
-    bits: std::ops::Range<u8>,
-    bit_numbering: BitNumbering,
-) -> Value {
-    region.push(UnpackBitFieldOp { id: Id::new(), bit_field, ty, bits, bit_numbering })[0]
-}
-
-impl Operation for UnpackBitFieldOp {
-    fn name(&self) -> &str {
-        "unpack_bit_field"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.bit_field]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![
-            self.ty.to_token_stream().to_string(),
-            format!("{}..{}", self.bits.start, self.bits.end),
-            format!("{:?}", self.bit_numbering),
-        ]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let bit_field = &self.bit_field;
-        let ty = &self.ty;
-        let start = self.bits.start;
-        let end = self.bits.end;
-        let bit_range = bit_range_to_token_stream(bit_field, start, end, self.bit_numbering);
-        quote! { #bit_field.unpack::<#ty, _, _>(#bit_range).map_err(|err| err.into()) }
     }
 }
