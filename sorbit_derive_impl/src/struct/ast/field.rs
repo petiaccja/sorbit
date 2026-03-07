@@ -3,7 +3,8 @@ use std::ops::Range;
 use syn::{Ident, Member, Type};
 
 use crate::attribute::BitNumbering;
-use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset, with_maybe_rounding};
+use crate::attribute::Transform;
+use crate::ir::algorithm::with_field_layout;
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ir::ops::{
     deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, serialize_object, symref,
@@ -17,6 +18,7 @@ pub enum Field {
     Direct {
         member: Member,
         ty: Type,
+        transform: Transform,
         layout_properties: FieldLayoutProperties,
     },
     Bit {
@@ -33,6 +35,7 @@ pub enum Field {
 pub struct BitFieldMember {
     pub member: Member,
     pub ty: Type,
+    pub transform: Transform,
     pub bits: Range<u8>,
 }
 
@@ -41,24 +44,27 @@ impl ToSerializeOp for Field {
 
     fn to_serialize_op(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
         match self {
-            Field::Direct { member, layout_properties, .. } => {
+            Field::Direct { member, transform, layout_properties, .. } => {
                 let field = symref(region, member_to_ident(member.clone()));
-                let result = serialize_with_layout(region, serializer, field, layout_properties);
+                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
+                    serialize_object(region, serializer, field)
+                });
                 vec![result]
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
                 let mut bit_field = empty_bit_field(region, ty.clone());
 
-                for member in members {
-                    let object = symref(region, member_to_ident(member.member.clone()));
-                    let maybe_new_bit_field =
-                        pack_bit_field(region, object, bit_field, member.bits.clone(), *bit_numbering);
+                for BitFieldMember { member, transform, bits, .. } in members {
+                    let object = symref(region, member_to_ident(member.clone()));
+                    let maybe_new_bit_field = pack_bit_field(region, object, bit_field, bits.clone(), *bit_numbering);
                     bit_field = try_(region, maybe_new_bit_field);
                 }
 
                 let raw = into_raw_bits(region, bit_field);
                 let raw_ref = ref_(region, raw);
-                let result = serialize_with_layout(region, serializer, raw_ref, layout_properties);
+                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
+                    serialize_object(region, serializer, raw_ref)
+                });
                 vec![result]
             }
         }
@@ -70,19 +76,23 @@ impl ToDeserializeOp for Field {
 
     fn to_deserialize_op(&self, region: &mut Region, deserializer: Value) -> Vec<Value> {
         match self {
-            Field::Direct { member: _, ty, layout_properties } => {
-                let result = deserialize_with_layout(region, deserializer, ty, layout_properties);
+            Field::Direct { ty, transform, layout_properties, .. } => {
+                let result = with_layout(region, deserializer, false, layout_properties, |region, de| {
+                    deserialize_object(region, de, ty.clone())
+                });
                 vec![result]
             }
-            Field::Bit { ident: _, ty, bit_numbering, layout_properties, members } => {
-                let maybe_raw_bits = deserialize_with_layout(region, deserializer, ty, layout_properties);
-                let raw_bits = try_(region, maybe_raw_bits);
+            Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
+                let result_raw_bits = with_layout(region, deserializer, false, layout_properties, |region, de| {
+                    deserialize_object(region, de, ty.clone())
+                });
+                let raw_bits = try_(region, result_raw_bits);
                 let bit_field = into_bit_field(region, raw_bits);
 
                 let unpacked = members
                     .iter()
-                    .map(|member| {
-                        unpack_bit_field(region, bit_field, member.ty.clone(), member.bits.clone(), *bit_numbering)
+                    .map(|BitFieldMember { ty, transform, bits, .. }| {
+                        unpack_bit_field(region, bit_field, ty.clone(), bits.clone(), *bit_numbering)
                     })
                     .collect();
 
@@ -92,34 +102,15 @@ impl ToDeserializeOp for Field {
     }
 }
 
-fn serialize_with_layout(
+fn with_layout(
     region: &mut Region,
     serializer: Value,
-    object: Value,
+    is_serializing: bool,
     layout_properties: &FieldLayoutProperties,
+    body: impl FnOnce(&mut Region, Value) -> Value,
 ) -> Value {
-    with_maybe_offset(region, serializer.clone(), layout_properties.offset, true);
-    with_maybe_alignment(region, serializer.clone(), layout_properties.align, true);
-    with_maybe_rounding(region, serializer, layout_properties.round, true, |region, serializer| {
-        with_maybe_byte_order(region, serializer, layout_properties.byte_order, true, |region, serializer| {
-            serialize_object(region, serializer, object)
-        })
-    })
-}
-
-fn deserialize_with_layout(
-    region: &mut Region,
-    deserializer: Value,
-    ty: &Type,
-    layout_properties: &FieldLayoutProperties,
-) -> Value {
-    with_maybe_offset(region, deserializer, layout_properties.offset, false);
-    with_maybe_alignment(region, deserializer, layout_properties.align, false);
-    with_maybe_rounding(region, deserializer, layout_properties.round, false, |region, deserializer| {
-        with_maybe_byte_order(region, deserializer, layout_properties.byte_order, false, |region, deserializer| {
-            deserialize_object(region, deserializer, ty.clone())
-        })
-    })
+    let FieldLayoutProperties { byte_order, offset, align, round } = layout_properties;
+    with_field_layout(region, serializer, is_serializing, *byte_order, *offset, *align, *round, body)
 }
 
 #[cfg(test)]
@@ -133,8 +124,12 @@ mod tests {
 
     #[test]
     fn to_serialize_op_direct_default() {
-        let input =
-            Field::Direct { member: parse_quote!(foo), ty: parse_quote!(i32), layout_properties: Default::default() };
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            transform: Transform::None,
+            layout_properties: Default::default(),
+        };
 
         let serializer = Id::new().value(0);
         let mut region = Region::new(0);
@@ -157,6 +152,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
 
@@ -184,6 +180,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
                 offset: Some(1),
@@ -228,6 +225,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: Some(ByteOrder::BigEndian),
                 offset: Some(1),
@@ -272,8 +270,12 @@ mod tests {
 
     #[test]
     fn to_deserialize_op_direct_default() {
-        let input =
-            Field::Direct { member: parse_quote!(foo), ty: parse_quote!(i32), layout_properties: Default::default() };
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(i32),
+            transform: Transform::None,
+            layout_properties: Default::default(),
+        };
 
         let serializer = Id::new().value(0);
         let mut region = Region::new(0);
@@ -294,6 +296,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
 
@@ -320,6 +323,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
                 offset: Some(1),
@@ -359,6 +363,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: Some(ByteOrder::BigEndian),
                 offset: Some(1),
@@ -413,8 +418,18 @@ mod tests {
             bit_numbering: BitNumbering::LSB0,
             layout_properties: Default::default(),
             members: vec![
-                BitFieldMember { member: parse_quote!(foo), ty: parse_quote!(u8), bits: 4..7 },
-                BitFieldMember { member: parse_quote!(bar), ty: parse_quote!(i8), bits: 0..4 },
+                BitFieldMember {
+                    member: parse_quote!(foo),
+                    ty: parse_quote!(u8),
+                    transform: Transform::None,
+                    bits: 4..7,
+                },
+                BitFieldMember {
+                    member: parse_quote!(bar),
+                    ty: parse_quote!(i8),
+                    transform: Transform::None,
+                    bits: 0..4,
+                },
             ],
         }
     }

@@ -8,7 +8,8 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::token::Comma;
 use syn::{
-    Attribute, Expr, ExprLit, ExprRange, Ident, Lit, LitBool, Meta, Path, RangeLimits, Type, TypePath, parse_quote,
+    Attribute, Expr, ExprCall, ExprLit, ExprRange, Ident, Lit, LitBool, Meta, Path, RangeLimits, Type, TypePath,
+    parse_quote,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,12 +25,27 @@ pub enum BitNumbering {
     LSB0,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Transform {
+    /// The value of this field as serialziation is simply its value as is.
+    #[default]
+    None,
+    /// The value of this field is calculated at serialization time as the number of items of `.0`.
+    Length(Ident),
+    /// The value of this field is calculated at serialization time as the number of bytes of `.0`.
+    ByteCount(Ident),
+}
+
 pub mod path {
     use syn::Path;
     use syn::parse_quote;
 
     pub fn sorbit_attribute() -> Path {
         parse_quote!(sorbit)
+    }
+
+    pub fn value() -> Path {
+        parse_quote!(value)
     }
 
     pub fn storage_id() -> Path {
@@ -202,6 +218,29 @@ pub fn as_bit_numbering(expr: &Expr) -> Result<BitNumbering, syn::Error> {
 impl std::fmt::Display for ByteOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+pub fn as_transform(expr: &Expr) -> Result<Transform, syn::Error> {
+    const MESSAGE: &str = "must be either `same`, `len(<FIELD>)`, or `byte_count(<FIELD>)`";
+    let error = || syn::Error::new(expr.span(), MESSAGE);
+    match expr {
+        Expr::Path(path) => (path == &parse_quote!(same)).then_some(Transform::None).ok_or_else(error),
+        Expr::Call(ExprCall { func, args, .. }) => {
+            if args.len() != 1 {
+                Err(error())
+            } else if let (Expr::Path(func), Some(Expr::Path(field))) = (func.as_ref(), args.first()) {
+                let field = field.path.get_ident().ok_or_else(error)?;
+                if func == &parse_quote!(len) {
+                    Ok(Transform::Length(field.clone()))
+                } else {
+                    Ok(Transform::ByteCount(field.clone()))
+                }
+            } else {
+                Err(error())
+            }
+        }
+        _ => Err(error()),
     }
 }
 

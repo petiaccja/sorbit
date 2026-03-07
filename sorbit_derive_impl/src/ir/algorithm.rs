@@ -44,10 +44,6 @@ pub fn with_maybe_rounding(
     }
 }
 
-// let body = with_maybe_byte_order(region, deserializer, byte_order, false, |region, deserializer| {
-//     deserialize_object_body(region, deserializer, ty)
-// });
-
 pub fn with_maybe_byte_order(
     region: &mut Region,
     serializer: Value,
@@ -62,4 +58,23 @@ pub fn with_maybe_byte_order(
         }),
         None => (body)(region, serializer),
     }
+}
+
+pub fn with_field_layout(
+    region: &mut Region,
+    serializer: Value,
+    is_serializing: bool,
+    byte_order: Option<ByteOrder>,
+    offset: Option<u64>,
+    align: Option<u64>,
+    round: Option<u64>,
+    body: impl FnOnce(&mut Region, Value) -> Value,
+) -> Value {
+    with_maybe_offset(region, serializer.clone(), offset, is_serializing);
+    with_maybe_alignment(region, serializer.clone(), align, is_serializing);
+    with_maybe_rounding(region, serializer, round, is_serializing, |region, serializer| {
+        with_maybe_byte_order(region, serializer, byte_order, is_serializing, |region, serializer| {
+            body(region, serializer)
+        })
+    })
 }

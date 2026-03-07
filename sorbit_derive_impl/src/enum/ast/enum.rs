@@ -359,7 +359,9 @@ fn literal_int_expr(value: isize) -> Expr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ir::pattern_match::assert_matches, r#struct::ast::Field};
+    use crate::attribute::Transform;
+    use crate::ir::pattern_match::assert_matches;
+    use crate::r#struct::ast::Field;
 
     use super::*;
 
@@ -448,6 +450,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(0),
                             ty: parse_quote!(u8),
+                            transform: Transform::None,
                             layout_properties: Default::default(),
                         }],
                     }),
@@ -464,6 +467,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(b),
                             ty: parse_quote!(i8),
+                            transform: Transform::None,
                             layout_properties: Default::default(),
                         }],
                     }),

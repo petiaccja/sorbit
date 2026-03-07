@@ -102,7 +102,10 @@ fn content(ident: Ident, attrs: Vec<Attribute>, fields: Fields) -> Result<Option
 
 #[cfg(test)]
 mod tests {
-    use crate::r#struct::parse::{Field, FieldLayoutProperties};
+    use crate::{
+        attribute::Transform,
+        r#struct::parse::{Field, FieldLayoutProperties},
+    };
 
     use super::*;
 
@@ -185,6 +188,7 @@ mod tests {
                 fields: vec![Field::Direct {
                     ident: parse_quote!(a),
                     ty: parse_quote!(u8),
+                    transform: Transform::None,
                     layout_properties: FieldLayoutProperties { offset: Some(2), ..Default::default() },
                 }],
             }),

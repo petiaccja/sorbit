@@ -52,6 +52,8 @@ impl TryFrom<DeriveInput> for Struct {
 mod tests {
     use syn::parse_quote;
 
+    use crate::attribute::Transform;
+
     use super::*;
 
     #[test]
@@ -143,6 +145,7 @@ mod tests {
             fields: vec![Field::Direct {
                 ident: parse_quote!(field),
                 ty: parse_quote!(u8),
+                transform: Transform::None,
                 layout_properties: Default::default(),
             }],
         };

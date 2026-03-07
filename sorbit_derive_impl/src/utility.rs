@@ -1,3 +1,4 @@
+use proc_macro2::Span;
 use quote::{format_ident, quote};
 use syn::parse_quote;
 
@@ -14,6 +15,12 @@ pub fn member_to_ident(member: syn::Member) -> syn::Ident {
         syn::Member::Named(ident) => ident,
         syn::Member::Unnamed(syn::Index { index, span: _ }) => format_ident!("m{index}"),
     }
+}
+
+pub fn to_member(ident: Option<syn::Ident>, index: usize, span: Span) -> syn::Member {
+    ident
+        .map(|ident| syn::Member::from(ident))
+        .unwrap_or_else(|| syn::Member::Unnamed(syn::Index { index: index as u32, span }))
 }
 
 /// Return a pattern that deconstructs a structure.

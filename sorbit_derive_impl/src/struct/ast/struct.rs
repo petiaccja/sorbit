@@ -145,6 +145,7 @@ impl Struct {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
+    use crate::attribute::Transform;
     use crate::ir::pattern_match::assert_matches;
 
     use super::*;
@@ -240,11 +241,13 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
+                    transform: Transform::None,
                     layout_properties: Default::default(),
                 },
                 Field::Direct {
                     member: parse_quote!(bar),
                     ty: parse_quote!(i8),
+                    transform: Transform::None,
                     layout_properties: Default::default(),
                 },
             ],
