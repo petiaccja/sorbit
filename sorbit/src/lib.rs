@@ -342,6 +342,7 @@ pub mod error;
 pub mod io;
 pub mod ser_de;
 pub use sorbit_derive::{Deserialize, PackInto, Serialize, UnpackFrom};
+pub mod collection;
 pub mod stream_ser_de;
 
 mod types;

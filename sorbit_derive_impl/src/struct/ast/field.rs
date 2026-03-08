@@ -6,6 +6,9 @@ use crate::attribute::BitNumbering;
 use crate::attribute::Transform;
 use crate::ir::algorithm::with_field_layout;
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
+use crate::ir::ops::deserialize_items_exact;
+use crate::ir::ops::items;
+use crate::ir::ops::len;
 use crate::ir::ops::{
     deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, serialize_object, symref,
     try_, unpack_bit_field,
@@ -44,20 +47,23 @@ impl ToSerializeOp for Field {
 
     fn to_serialize_op(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
         match self {
-            Field::Direct { member, transform, layout_properties, .. } => {
-                let field = symref(region, member_to_ident(member.clone()));
+            Field::Direct { member, ty, transform, layout_properties, .. } => {
                 let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
-                    serialize_object(region, serializer, field)
+                    let field = symref(region, member_to_ident(member.clone()));
+                    let transformed = serialize_transform(region, serializer, field, ty, transform);
+                    serialize_object(region, serializer, transformed)
                 });
                 vec![result]
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
                 let mut bit_field = empty_bit_field(region, ty.clone());
 
-                for BitFieldMember { member, transform, bits, .. } in members {
-                    let object = symref(region, member_to_ident(member.clone()));
-                    let maybe_new_bit_field = pack_bit_field(region, object, bit_field, bits.clone(), *bit_numbering);
-                    bit_field = try_(region, maybe_new_bit_field);
+                for BitFieldMember { member, ty, transform, bits, .. } in members {
+                    let field = symref(region, member_to_ident(member.clone()));
+                    let transformed = serialize_transform(region, serializer, field, ty, transform);
+                    let result_new_bit_field =
+                        pack_bit_field(region, transformed, bit_field, bits.clone(), *bit_numbering);
+                    bit_field = try_(region, result_new_bit_field);
                 }
 
                 let raw = into_raw_bits(region, bit_field);
@@ -78,7 +84,14 @@ impl ToDeserializeOp for Field {
         match self {
             Field::Direct { ty, transform, layout_properties, .. } => {
                 let result = with_layout(region, deserializer, false, layout_properties, |region, de| {
-                    deserialize_object(region, de, ty.clone())
+                    match transform {
+                        Transform::None => deserialize_object(region, de, ty.clone()),
+                        Transform::Length(member) => deserialize_object(region, de, ty.clone()),
+                        Transform::ByteCount(member) => deserialize_object(region, de, ty.clone()),
+                        Transform::LengthBy(member) => todo!(), //deserialize_items_exact(region, de, len, ty.clone()),
+                        Transform::ByteCountBy(member) => todo!(),
+                    }
+                    //deserialize_object(region, de, ty.clone())
                 });
                 vec![result]
             }
@@ -111,6 +124,36 @@ fn with_layout(
 ) -> Value {
     let FieldLayoutProperties { byte_order, offset, align, round } = layout_properties;
     with_field_layout(region, serializer, is_serializing, *byte_order, *offset, *align, *round, body)
+}
+
+pub fn serialize_transform(
+    region: &mut Region,
+    serializer: Value,
+    value: Value,
+    ty: &Type,
+    transform: &Transform,
+) -> Value {
+    match transform {
+        Transform::None => value,
+        Transform::Length(member) => {
+            // Get the length of the collection referred to by `member`.
+            let pair = symref(region, member_to_ident(member.clone()));
+            let result_len = len(region, serializer, pair, ty.clone());
+            let len = try_(region, result_len);
+            ref_(region, len)
+        }
+        Transform::ByteCount(_member) => value, // Needs to be updated in a second pass.
+        Transform::LengthBy(_member) => {
+            // Items without the length.
+            let items = items(region, value);
+            ref_(region, items)
+        }
+        Transform::ByteCountBy(_member) => {
+            // Items without the length.
+            let items = items(region, value);
+            ref_(region, items)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -164,8 +207,8 @@ mod tests {
 
         let pattern = "
         {
-            %foo = symref [foo]
             %res = byte_order[BigEndian] %serializer |%se_inner| {
+                %foo = symref [foo]
                 %res_inner = serialize_object %se_inner, %foo
                 yield %res_inner
             }
@@ -197,8 +240,6 @@ mod tests {
 
         let pattern = "
         {
-            %foo = symref [foo]
-
             %offset = pad [1, true] %serializer
             %try_offset = try %offset
 
@@ -206,6 +247,7 @@ mod tests {
             %try_align = try %align
             
             %res = serialize_composite %serializer |%s_inner| {
+                %foo = symref [foo]
                 %res_inner = serialize_object %s_inner, %foo
                 %round = align [3, true] %s_inner
                 %try_round = try %round
@@ -242,8 +284,6 @@ mod tests {
 
         let pattern = "
         {
-            %foo = symref [foo]
-
             %offset = pad [1, true] %serializer
             %try_offset = try %offset
 
@@ -252,6 +292,7 @@ mod tests {
             
             %res = serialize_composite %serializer |%s_inner| {
                 %res_inner = byte_order[BigEndian] %s_inner |%se_bo| {
+                    %foo = symref [foo]
                     %res_bo = serialize_object %se_bo, %foo
                     yield %res_bo
                 }

@@ -126,6 +126,12 @@ pub trait Serializer: SerializationOutcome {
     /// Use this to exit serialization with a success when you don't have any
     /// actual values to serialize.
     fn success(&mut self) -> Result<Self::Success, Self::Error>;
+
+    /// Return an error, indicating that serialization failed.
+    ///
+    /// This method can be called by implementors of [`crate::ser_de::Serialize`]
+    /// when an error occurs during serialization.
+    fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error>;
 }
 
 /// A serializer that can analyze and update previously serialized objects.

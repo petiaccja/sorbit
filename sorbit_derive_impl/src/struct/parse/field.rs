@@ -95,8 +95,11 @@ impl Field {
         ty: Type,
         parameters: HashMap<Path, Expr>,
     ) -> Result<Field, syn::Error> {
-        let accepted_parameters = FieldLayoutProperties::accepted_parameters();
-        check_invalid_parameters(&parameters, accepted_parameters.iter())?;
+        let accepted_parameters = [
+            &[path::value()] as &[Path],
+            &FieldLayoutProperties::accepted_parameters() as &[Path],
+        ];
+        check_invalid_parameters(&parameters, accepted_parameters.into_iter().flatten())?;
 
         let transform = parameters.get(&path::value()).map(as_transform).transpose()?.unwrap_or_default();
         let layout_properties = FieldLayoutProperties::from_parameters(&parameters)?;
@@ -105,7 +108,7 @@ impl Field {
 
     fn parse_bit_field(ident: Option<Ident>, ty: Type, parameters: HashMap<Path, Expr>) -> Result<Field, syn::Error> {
         let accepted_parameters = [
-            &[path::bit_range(), path::storage_id()] as &[Path],
+            &[path::bit_range(), path::storage_id(), path::value()] as &[Path],
             &BitFieldStorageProperties::accepted_parameters() as &[Path],
             &FieldLayoutProperties::accepted_parameters() as &[Path],
         ];

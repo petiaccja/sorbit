@@ -140,6 +140,10 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         self.write(&[])
     }
 
+    fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error> {
+        Err(ErrorKind::Custom(message).into())
+    }
+
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error> {
         self.write(&[value as u8])
     }
