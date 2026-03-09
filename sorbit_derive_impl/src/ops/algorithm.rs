@@ -1,6 +1,6 @@
 use crate::attribute::ByteOrder;
 use crate::ir::dag::{Region, Value};
-use crate::ir::ops::{self as ops, align, deserialize_composite, member, ok, pad, serialize_composite, try_, yield_};
+use crate::ops::{self as ops, align, deserialize_composite, member, ok, pad, serialize_composite, try_, yield_};
 
 pub fn with_maybe_offset(region: &mut Region, serializer: Value, offset: Option<u64>, serializing: bool) {
     if let Some(offset) = offset {

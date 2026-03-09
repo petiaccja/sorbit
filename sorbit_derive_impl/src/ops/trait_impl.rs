@@ -1,8 +1,8 @@
-use crate::ir::constants::{
+use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::ops::constants::{
     DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT,
     SERIALIZER_TRAIT, SERIALIZER_TYPE,
 };
-use crate::ir::dag::{Id, Operation, Region, Value};
 use proc_macro2::TokenStream;
 use quote::quote;
 

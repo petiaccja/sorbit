@@ -1,9 +1,9 @@
 use syn::{Generics, Ident, Member};
 
 use crate::attribute::ByteOrder;
-use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ir::dag::{Region, Value};
-use crate::ir::ops::{
+use crate::ops::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
+use crate::ops::{
     deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, self_, serialize_composite,
     struct_, success, try_, tuple, yield_,
 };

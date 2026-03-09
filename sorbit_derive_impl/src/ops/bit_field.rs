@@ -2,8 +2,8 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
 use crate::attribute::BitNumbering;
-use crate::ir::constants::BIT_FIELD_TYPE;
 use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::ops::constants::BIT_FIELD_TYPE;
 
 //------------------------------------------------------------------------------
 // Empty bit field

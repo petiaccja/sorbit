@@ -6,9 +6,9 @@ use syn::{BinOp, Expr, ExprBinary, ExprLit, Generics, Ident, Lit, LitInt, Token,
 use crate::attribute::ByteOrder;
 use crate::r#enum::ast::variant::Variant;
 use crate::r#enum::parse;
-use crate::ir::algorithm::with_maybe_byte_order;
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
-use crate::ir::ops::{
+use crate::ops::algorithm::with_maybe_byte_order;
+use crate::ops::{
     custom_expr, deserialize_object, error, impl_deserialize, impl_serialize, match_, member, ok, ref_, self_,
     serialize_composite, serialize_object, struct_, try_, use_, yield_,
 };

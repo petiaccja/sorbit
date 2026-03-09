@@ -4,12 +4,12 @@ use syn::{Ident, Member, Type};
 
 use crate::attribute::BitNumbering;
 use crate::attribute::Transform;
-use crate::ir::algorithm::with_field_layout;
 use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
-use crate::ir::ops::deserialize_items_exact;
-use crate::ir::ops::items;
-use crate::ir::ops::len;
-use crate::ir::ops::{
+use crate::ops::algorithm::with_field_layout;
+use crate::ops::deserialize_items_exact;
+use crate::ops::items;
+use crate::ops::len;
+use crate::ops::{
     deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, serialize_object, symref,
     try_, unpack_bit_field,
 };
@@ -161,7 +161,8 @@ mod tests {
     use super::*;
 
     use crate::attribute::ByteOrder;
-    use crate::ir::{dag::Id, ops::yield_, pattern_match::assert_matches};
+    use crate::ir::{dag::Id, pattern_match::assert_matches};
+    use crate::ops::yield_;
 
     use syn::parse_quote;
 

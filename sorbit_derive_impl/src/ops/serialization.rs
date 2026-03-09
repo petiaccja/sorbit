@@ -2,11 +2,11 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
 use crate::attribute::ByteOrder;
-use crate::ir::constants::{
+use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::ops::constants::{
     BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
     TRACE_ERROR_TRAIT,
 };
-use crate::ir::dag::{Id, Operation, Region, Value};
 
 //------------------------------------------------------------------------------
 // Success
