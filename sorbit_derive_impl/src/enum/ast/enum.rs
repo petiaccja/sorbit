@@ -788,6 +788,7 @@ mod tests {
                         %result_cont_a = deserialize_composite %deserializer |%de_cont_a| {
                             %result_m0 = deserialize_object [u8] %de_cont_a
                             %m0 = try %result_m0
+                            sym [m0] %m0
                             %struct_a = struct [A, 0] %m0
                             %result_struct_a = ok %struct_a
                             yield %result_struct_a
@@ -799,6 +800,7 @@ mod tests {
                         %result_cont_b = deserialize_composite %deserializer |%de_cont_b| {
                             %result_b = deserialize_object [i8] %de_cont_b
                             %b = try %result_b
+                            sym [b] %b
                             %struct_b = struct [B, b] %b
                             %result_struct_b = ok %struct_b
                             yield %result_struct_b

@@ -57,7 +57,7 @@ impl ToTokens for DeserializeItemsExactOp {
         let len = &self.len;
         let collection_ty = &self.collection_ty;
         tokens.extend(quote! {
-            ::sorbit::collection::deserialize_items_exact::<#collection_ty>(
+            ::sorbit::collection::deserialize_items_exact::<#collection_ty, _, _, _>(
                 #deserializer,
                 #len
             )

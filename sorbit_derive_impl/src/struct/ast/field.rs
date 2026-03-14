@@ -9,7 +9,7 @@ use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
 use crate::ops::constants::BIT_FIELD_TYPE;
 use crate::ops::items;
-use crate::ops::len;
+use crate::ops::{deserialize_items_exact, len};
 use crate::ops::{
     deserialize_object, empty_bit_field, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
@@ -40,6 +40,15 @@ pub struct BitFieldMember {
     pub ty: Type,
     pub transform: Transform,
     pub bits: Range<u8>,
+}
+
+impl Field {
+    pub fn members(&self) -> Vec<&Member> {
+        match self {
+            Field::Direct { member, .. } => vec![member],
+            Field::Bit { members, .. } => members.iter().map(|member| &member.member).collect(),
+        }
+    }
 }
 
 impl ToSerializeOp for Field {
@@ -82,16 +91,17 @@ impl ToDeserializeOp for Field {
     fn to_deserialize_op(&self, region: &mut Region, deserializer: Value) -> Vec<Value> {
         match self {
             Field::Direct { ty, transform, layout_properties, .. } => {
-                let result = with_layout(region, deserializer, false, layout_properties, |region, de| {
-                    match transform {
+                let result =
+                    with_layout(region, deserializer, false, layout_properties, |region, de| match transform {
                         Transform::None => deserialize_object(region, de, ty.clone()),
-                        Transform::Length(member) => deserialize_object(region, de, ty.clone()),
-                        Transform::ByteCount(member) => deserialize_object(region, de, ty.clone()),
-                        Transform::LengthBy(member) => todo!(), //deserialize_items_exact(region, de, len, ty.clone()),
+                        Transform::Length(_) => deserialize_object(region, de, ty.clone()),
+                        Transform::ByteCount(_) => deserialize_object(region, de, ty.clone()),
+                        Transform::LengthBy(len_by) => {
+                            let len = symref(region, member_to_ident(len_by.clone()));
+                            deserialize_items_exact(region, de, len, ty.clone())
+                        }
                         Transform::ByteCountBy(member) => todo!(),
-                    }
-                    //deserialize_object(region, de, ty.clone())
-                });
+                    });
                 vec![result]
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
@@ -102,7 +112,7 @@ impl ToDeserializeOp for Field {
 
                 let unpacked = members
                     .iter()
-                    .map(|BitFieldMember { ty, transform, bits, .. }| {
+                    .map(|BitFieldMember { ty, bits, .. }| {
                         unpack_bit_field(region, bit_field, ty.clone(), bits.clone(), *bit_numbering)
                     })
                     .collect();

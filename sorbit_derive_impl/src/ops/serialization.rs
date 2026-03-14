@@ -5,7 +5,6 @@ use crate::attribute::ByteOrder;
 use crate::ir::op;
 use crate::ops::constants::{
     BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
-    TRACE_ERROR_TRAIT,
 };
 
 //------------------------------------------------------------------------------
@@ -109,6 +108,7 @@ impl ToTokens for AlignOp {
 // Annotate result
 //------------------------------------------------------------------------------
 
+/*
 op!(
     name: "annotate_result",
     builder: annotate_result,
@@ -128,6 +128,7 @@ impl ToTokens for AnnotateResultOp {
         tokens.extend(quote! { #result.map_err(|err| #TRACE_ERROR_TRAIT::annotate(err, #annotation)) })
     }
 }
+*/
 
 //------------------------------------------------------------------------------
 // Serialize object

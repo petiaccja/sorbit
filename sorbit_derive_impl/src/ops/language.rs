@@ -96,6 +96,29 @@ impl ToTokens for DestructureOp {
 }
 
 //------------------------------------------------------------------------------
+// SymOp
+//------------------------------------------------------------------------------
+
+op!(
+    name: "sym",
+    builder: sym,
+    op: SymOp,
+    inputs: {value},
+    outputs: {},
+    attributes: {sym: Ident},
+    regions: {},
+    terminator: false
+);
+
+impl ToTokens for SymOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let value = &self.value;
+        let sym = &self.sym;
+        tokens.extend(quote! { #[allow(unused)] let #sym = &#value })
+    }
+}
+
+//------------------------------------------------------------------------------
 // SymrefOp
 //------------------------------------------------------------------------------
 

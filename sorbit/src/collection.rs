@@ -28,14 +28,18 @@ pub fn items<'collection, Collection>(collection: &'collection Collection) -> It
 }
 
 /// Deserialize a collection given the number of its elements is given exactly.
-pub fn deserialize_items_exact<Collection, Item, D, Len>(deserializer: &mut D, len: Len) -> Result<Collection, D::Error>
+pub fn deserialize_items_exact<Collection, Item, D, Len>(
+    deserializer: &mut D,
+    len: &Len,
+) -> Result<Collection, D::Error>
 where
     D: Deserializer,
     Item: Deserialize,
     Collection: FromIterator<Item>,
     usize: TryFrom<Len>,
+    Len: Clone,
 {
-    if let Ok(len) = usize::try_from(len) {
+    if let Ok(len) = usize::try_from(len.clone()) {
         (0..len).into_iter().map(|_| Item::deserialize(deserializer)).collect()
     } else {
         deserializer.error("the length of the collection can not be converted into a `usize`")

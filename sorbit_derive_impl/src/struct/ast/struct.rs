@@ -5,7 +5,7 @@ use crate::ir::{Region, Value};
 use crate::ops::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ops::{
     deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, self_, serialize_composite,
-    struct_, success, try_, tuple,
+    struct_, success, sym, try_, tuple,
 };
 use crate::r#struct::ast::conversion::add_symmetric_transforms;
 use crate::r#struct::ast::field::BitFieldMember;
@@ -118,14 +118,19 @@ impl Struct {
                 region,
                 deserializer,
                 Region::build(|region, [deserializer]| {
-                    let maybe_fields: Vec<_> = self
+                    let fields: Vec<_> = self
                         .fields
                         .iter()
-                        .map(|field| field.to_deserialize_op(region, deserializer))
+                        .map(|field| {
+                            let results = field.to_deserialize_op(region, deserializer);
+                            let members = field.members();
+                            let values: Vec<_> = results.iter().map(|result| try_(region, *result)).collect();
+                            std::iter::zip(members, &values)
+                                .for_each(|(member, value)| sym(region, *value, member_to_ident(member.clone())));
+                            values
+                        })
                         .flatten()
                         .collect();
-                    let fields: Vec<_> =
-                        maybe_fields.iter().map(|maybe_deserialized| try_(region, *maybe_deserialized)).collect();
                     let members = self.members();
 
                     with_maybe_offset(region, deserializer, self.len, false);
