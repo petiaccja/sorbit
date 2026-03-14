@@ -24,42 +24,6 @@ impl ToTokens for EmptyBitFieldOp {
 }
 
 op!(
-    name: "into_bit_field",
-    builder: into_bit_field,
-    op: IntoBitFieldOp,
-    inputs: {packed},
-    outputs: {bit_field},
-    attributes: {},
-    regions: {},
-    terminator: false
-);
-
-impl ToTokens for IntoBitFieldOp {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let packed = &self.packed;
-        tokens.extend(quote! { #BIT_FIELD_TYPE::from_bits(#packed) })
-    }
-}
-
-op!(
-    name: "into_raw_bits",
-    builder: into_raw_bits,
-    op: IntoRawBitsOp,
-    inputs: {bit_field},
-    outputs: {packed},
-    attributes: {},
-    regions: {},
-    terminator: false
-);
-
-impl ToTokens for IntoRawBitsOp {
-    fn to_tokens(&self, tokens: &mut TokenStream) {
-        let bit_field = &self.bit_field;
-        tokens.extend(quote! { #bit_field.into_bits() })
-    }
-}
-
-op!(
     name: "pack_bit_field",
     builder: pack_bit_field,
     op: PackBitFieldOp,

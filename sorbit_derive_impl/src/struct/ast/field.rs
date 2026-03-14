@@ -1,16 +1,17 @@
 use std::ops::Range;
 
+use syn::parse_quote;
 use syn::{Ident, Member, Type};
 
 use crate::attribute::BitNumbering;
 use crate::attribute::Transform;
 use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
+use crate::ops::constants::BIT_FIELD_TYPE;
 use crate::ops::items;
 use crate::ops::len;
 use crate::ops::{
-    deserialize_object, empty_bit_field, into_bit_field, into_raw_bits, pack_bit_field, ref_, serialize_object, symref,
-    try_, unpack_bit_field,
+    deserialize_object, empty_bit_field, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
 use crate::r#struct::parse::FieldLayoutProperties;
 use crate::utility::member_to_ident;
@@ -65,10 +66,9 @@ impl ToSerializeOp for Field {
                     bit_field = try_(region, result_new_bit_field);
                 }
 
-                let raw = into_raw_bits(region, bit_field);
-                let raw_ref = ref_(region, raw);
+                let bit_field_ref = ref_(region, bit_field);
                 let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
-                    serialize_object(region, serializer, raw_ref)
+                    serialize_object(region, serializer, bit_field_ref)
                 });
                 vec![result]
             }
@@ -96,10 +96,9 @@ impl ToDeserializeOp for Field {
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
                 let result_raw_bits = with_layout(region, deserializer, false, layout_properties, |region, de| {
-                    deserialize_object(region, de, ty.clone())
+                    deserialize_object(region, de, parse_quote!(#BIT_FIELD_TYPE <#ty>))
                 });
-                let raw_bits = try_(region, result_raw_bits);
-                let bit_field = into_bit_field(region, raw_bits);
+                let bit_field = try_(region, result_raw_bits);
 
                 let unpacked = members
                     .iter()
@@ -488,9 +487,8 @@ mod tests {
         let pattern = "
         {
             %bf = empty_bit_field [u16]
-            %raw = into_raw_bits %bf
-            %ref_raw = ref %raw
-            %s = serialize_object %serializer %ref_raw
+            %ref_bf = ref %bf
+            %s = serialize_object %serializer %ref_bf
             yield %s
         }
         ";
@@ -519,9 +517,8 @@ mod tests {
             %maybe_bf2 = pack_bit_field [0..4, LSB0] %bar %bf1
             %bf2 = try %maybe_bf2
 
-            %raw = into_raw_bits %bf2
-            %ref_raw = ref %raw
-            %s = serialize_object %serializer %ref_raw
+            %ref_bf2 = ref %bf2
+            %s = serialize_object %serializer %ref_bf2
             yield %s
         }
         ";
@@ -540,9 +537,8 @@ mod tests {
 
         let pattern = "
         {
-            %s = deserialize_object [u16] %deserializer
-            %try_s = try %s
-            %bf = into_bit_field %try_s
+            %s = deserialize_object [::sorbit::bit::BitField < u16 > ] %deserializer
+            %bf = try %s
             yield
         }
         ";
@@ -561,9 +557,8 @@ mod tests {
 
         let pattern = "
         {
-            %s = deserialize_object [u16] %deserializer
-            %try_s = try %s
-            %bf = into_bit_field %try_s
+            %s = deserialize_object [::sorbit::bit::BitField < u16 >] %deserializer
+            %bf = try %s
 
             %maybe_foo = unpack_bit_field [u8, 4..7, LSB0] %bf
             %maybe_bar = unpack_bit_field [i8, 0..4, LSB0] %bf
