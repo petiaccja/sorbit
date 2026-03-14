@@ -126,7 +126,7 @@ pub struct YieldOp {
 }
 
 pub fn yield_(region: &mut Region, values: Vec<Value>) {
-    region.push(YieldOp { values });
+    region.append(YieldOp { values });
 }
 
 impl Operation for YieldOp {
@@ -225,7 +225,7 @@ pub struct MatchOp {
 }
 
 pub fn match_<'a>(region: &mut Region, expr: Value, arms: Vec<(syn::Pat, Option<syn::Expr>, Region)>) -> Value {
-    region.push(MatchOp { expr, arms, result: Value::new() })[0]
+    region.append(MatchOp { expr, arms, result: Value::new() })[0]
 }
 
 impl Operation for MatchOp {
@@ -358,7 +358,7 @@ pub struct TupleOp {
 }
 
 pub fn tuple(region: &mut Region, members: Vec<Value>) -> Value {
-    region.push(TupleOp { members, result: Value::new() })[0]
+    region.append(TupleOp { members, result: Value::new() })[0]
 }
 
 impl Operation for TupleOp {
@@ -401,7 +401,7 @@ pub struct StructOp {
 }
 
 pub fn struct_(region: &mut Region, struct_ty: syn::Type, members: Vec<(syn::Member, Value)>) -> Value {
-    region.push(StructOp { struct_ty, members, result: Value::new() })[0]
+    region.append(StructOp { struct_ty, members, result: Value::new() })[0]
 }
 
 impl Operation for StructOp {

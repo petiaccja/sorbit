@@ -97,7 +97,7 @@ macro_rules! op {
                 $($attributes,)*
                 $($regions,)*
             };
-            let result = region.push(op);
+            let result = region.append(op);
             crate::ir::operation::IntoValueTuple::into_value_tuple(&result)
         }
 

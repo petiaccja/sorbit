@@ -32,7 +32,7 @@ impl Region {
         &self.arguments
     }
 
-    pub fn push(&mut self, operation: impl Operation + 'static) -> Vec<Value> {
+    pub fn append(&mut self, operation: impl Operation + 'static) -> Vec<Value> {
         if self.operations.last().is_some_and(|last| last.is_terminator()) {
             panic!("region has already been terminated")
         }
