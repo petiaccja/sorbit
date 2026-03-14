@@ -4,9 +4,8 @@ use syn::{Ident, Member, Type};
 
 use crate::attribute::BitNumbering;
 use crate::attribute::Transform;
-use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
+use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
-use crate::ops::deserialize_items_exact;
 use crate::ops::items;
 use crate::ops::len;
 use crate::ops::{
@@ -161,7 +160,7 @@ mod tests {
     use super::*;
 
     use crate::attribute::ByteOrder;
-    use crate::ir::{dag::Id, pattern_match::assert_matches};
+    use crate::ir::pattern_match::assert_matches;
     use crate::ops::yield_;
 
     use syn::parse_quote;
@@ -175,7 +174,7 @@ mod tests {
             layout_properties: Default::default(),
         };
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -200,7 +199,7 @@ mod tests {
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -208,7 +207,7 @@ mod tests {
 
         let pattern = "
         {
-            %res = byte_order[BigEndian] %serializer |%se_inner| {
+            %res = byte_order[BigEndian, true] %serializer |%se_inner| {
                 %foo = symref [foo]
                 %res_inner = serialize_object %se_inner, %foo
                 yield %res_inner
@@ -233,7 +232,7 @@ mod tests {
             },
         };
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -255,7 +254,7 @@ mod tests {
                 yield %res_inner
             }
             %res_try = try %res
-            %res_1 = member [1, val] %res_try
+            %res_1 = member [1, false] %res_try
             %res_ok = ok %res_1
             yield %res_ok
         }
@@ -277,7 +276,7 @@ mod tests {
             },
         };
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -292,7 +291,7 @@ mod tests {
             %try_align = try %align
             
             %res = serialize_composite %serializer |%s_inner| {
-                %res_inner = byte_order[BigEndian] %s_inner |%se_bo| {
+                %res_inner = byte_order[BigEndian, true] %s_inner |%se_bo| {
                     %foo = symref [foo]
                     %res_bo = serialize_object %se_bo, %foo
                     yield %res_bo
@@ -302,7 +301,7 @@ mod tests {
                 yield %res_inner
             }
             %res_try = try %res
-            %res_1 = member [1, val] %res_try
+            %res_1 = member [1, false] %res_try
             %res_ok = ok %res_1
             yield %res_ok
         }
@@ -319,7 +318,7 @@ mod tests {
             layout_properties: Default::default(),
         };
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -342,7 +341,7 @@ mod tests {
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
 
-        let de = Id::new().value(0);
+        let de = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, de);
         yield_(&mut region, results);
@@ -350,7 +349,7 @@ mod tests {
 
         let pattern = "
         {
-            %res = byte_order[BigEndian] %de |%de_bo| {
+            %res = byte_order[BigEndian, false] %de |%de_bo| {
                 %res_bo = deserialize_object [i32] %de_bo
                 yield %res_bo
             }
@@ -374,7 +373,7 @@ mod tests {
             },
         };
 
-        let de = Id::new().value(0);
+        let de = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, de);
         yield_(&mut region, results);
@@ -414,7 +413,7 @@ mod tests {
             },
         };
 
-        let de = Id::new().value(0);
+        let de = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, de);
         yield_(&mut region, results);
@@ -429,7 +428,7 @@ mod tests {
             %try_align = try %align
 
             %res = deserialize_composite %deserializer |%des_inner| {
-                %res_inner = byte_order[BigEndian] %des_inner |%de_bo| {
+                %res_inner = byte_order[BigEndian, false] %des_inner |%de_bo| {
                     %res_bo = deserialize_object [i32] %de_bo
                     yield %res_bo
                 }
@@ -480,7 +479,7 @@ mod tests {
     fn to_serialize_op_bit_default() {
         let input = make_bit_field_empty();
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -502,7 +501,7 @@ mod tests {
     fn to_serialize_op_bit_with_members() {
         let input = make_bit_field_with_members();
 
-        let serializer = Id::new().value(0);
+        let serializer = Value::new();
         let mut region = Region::new(0);
         let results = input.to_serialize_op(&mut region, serializer);
         yield_(&mut region, results);
@@ -533,7 +532,7 @@ mod tests {
     fn to_deserialize_op_bit_empty() {
         let input = make_bit_field_empty();
 
-        let de = Id::new().value(0);
+        let de = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, de);
         yield_(&mut region, results);
@@ -554,7 +553,7 @@ mod tests {
     fn to_deserialize_op_bit_with_members() {
         let input = make_bit_field_with_members();
 
-        let de = Id::new().value(0);
+        let de = Value::new();
         let mut region = Region::new(0);
         let results = input.to_deserialize_op(&mut region, de);
         yield_(&mut region, results);

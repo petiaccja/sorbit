@@ -1,6 +1,6 @@
 use crate::attribute::ByteOrder;
-use crate::ir::dag::{Region, Value};
-use crate::ops::{self as ops, align, deserialize_composite, member, ok, pad, serialize_composite, try_, yield_};
+use crate::ir::{Region, Value};
+use crate::ops::{self as ops, align, deserialize_composite, member, ok, pad, serialize_composite, try_};
 
 pub fn with_maybe_offset(region: &mut Region, serializer: Value, offset: Option<u64>, serializing: bool) {
     if let Some(offset) = offset {
@@ -24,12 +24,12 @@ pub fn with_maybe_rounding(
     body: impl FnOnce(&mut Region, Value) -> Value,
 ) -> Value {
     if let Some(round) = round {
-        let composite_body = |region: &mut Region, deserializer| {
+        let composite_body = Region::build(|region: &mut Region, [deserializer]| {
             let maybe_deserialized = body(region, deserializer);
             let maybe_round = align(region, deserializer.clone(), round, is_serializing);
             let _ = try_(region, maybe_round);
-            let _ = yield_(region, vec![maybe_deserialized]);
-        };
+            vec![maybe_deserialized]
+        });
         match is_serializing {
             true => {
                 let maybe_composite = serialize_composite(region, serializer, composite_body);
@@ -52,10 +52,13 @@ pub fn with_maybe_byte_order(
     body: impl FnOnce(&mut Region, Value) -> Value,
 ) -> Value {
     match byte_order {
-        Some(byte_order) => ops::byte_order(region, serializer, byte_order, is_serializing, |region, serializer| {
-            let result = body(region, serializer);
-            let _ = yield_(region, vec![result]);
-        }),
+        Some(byte_order) => ops::byte_order(
+            region,
+            serializer,
+            byte_order,
+            is_serializing,
+            Region::build(|region, [serializer]| vec![body(region, serializer)]),
+        ),
         None => (body)(region, serializer),
     }
 }

@@ -1,150 +1,66 @@
+use crate::ir::op;
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
-use syn::Type;
 
-use crate::ir::dag::{Id, Operation, Region, Value};
+op!(
+    name: "len",
+    builder: len,
+    op: LenOp,
+    inputs: {serializer, collection},
+    outputs: {len_value},
+    attributes: {len_ty: syn::Type},
+    regions: {},
+    terminator: false
+);
 
-//------------------------------------------------------------------------------
-// Length
-//------------------------------------------------------------------------------
-
-struct LenOp {
-    id: Id,
-    serializer: Value,
-    collection: Value,
-    len: Type,
-}
-
-pub fn len(region: &mut Region, serializer: Value, collection: Value, len: Type) -> Value {
-    region.push(LenOp { id: Id::new(), serializer, collection, len })[0]
-}
-
-impl Operation for LenOp {
-    fn name(&self) -> &str {
-        "len"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer, self.collection]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.len.to_token_stream().to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for LenOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let collection = &self.collection;
-        let len = &self.len;
-        quote! { ::sorbit::collection::len::<#len, _, _>(#serializer, #collection) }
+        let len_ty = &self.len_ty;
+        tokens.extend(quote! { ::sorbit::collection::len::<#len_ty, _, _>(#serializer, #collection) })
     }
 }
 
-//------------------------------------------------------------------------------
-// Get items of collection
-//------------------------------------------------------------------------------
+op!(
+    name: "items",
+    builder: items,
+    op: ItemsOp,
+    inputs: {collection},
+    outputs: {items},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-struct ItemsOp {
-    id: Id,
-    collection: Value,
-}
-
-pub fn items(region: &mut Region, collection: Value) -> Value {
-    region.push(ItemsOp { id: Id::new(), collection })[0]
-}
-
-impl Operation for ItemsOp {
-    fn name(&self) -> &str {
-        "items"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.collection]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for ItemsOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let collection = &self.collection;
-        quote! { ::sorbit::collection::items(#collection) }
+        tokens.extend(quote! { ::sorbit::collection::items(#collection) })
     }
 }
 
-//------------------------------------------------------------------------------
-// Deserialize items exact
-//------------------------------------------------------------------------------
+op!(
+    name: "deserialize_items_exact",
+    builder: deserialize_items_exact,
+    op: DeserializeItemsExactOp,
+    inputs: {deserializer, len},
+    outputs: {collection_value},
+    attributes: {collection_ty: syn::Type},
+    regions: {},
+    terminator: false
+);
 
-struct DeserializeItemsExactOp {
-    id: Id,
-    deserializer: Value,
-    len: Value,
-    collection: Type,
-}
-
-pub fn deserialize_items_exact(region: &mut Region, deserializer: Value, len: Value, collection: Type) -> Value {
-    region.push(DeserializeItemsExactOp { id: Id::new(), deserializer, len, collection })[0]
-}
-
-impl Operation for DeserializeItemsExactOp {
-    fn name(&self) -> &str {
-        "serialize_items_exact"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer, self.len]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for DeserializeItemsExactOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let len = &self.len;
-        let collection = &self.collection;
-        quote! {
-            ::sorbit::collection::deserialize_items_exact::<#collection>(
+        let collection_ty = &self.collection_ty;
+        tokens.extend(quote! {
+            ::sorbit::collection::deserialize_items_exact::<#collection_ty>(
                 #deserializer,
                 #len
             )
-        }
+        })
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    ir::dag::{Id, Operation, Region, Value},
+    ir::{Attribute, Operation, Region, Value, op},
     utility::deconstruct_pattern,
 };
 use proc_macro2::TokenStream;
@@ -10,41 +10,20 @@ use syn::{Ident, Member, Path, Type};
 // Self
 //------------------------------------------------------------------------------
 
-pub struct SelfOp {
-    id: Id,
-}
+op!(
+    name: "self",
+    builder: self_,
+    op: SelfOp,
+    inputs: {},
+    outputs: {self_value},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn self_(region: &mut Region) -> Value {
-    region.push(SelfOp { id: Id::new() })[0]
-}
-
-impl Operation for SelfOp {
-    fn name(&self) -> &str {
-        "self"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        quote! { self }
+impl ToTokens for SelfOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        tokens.extend(quote! { self })
     }
 }
 
@@ -52,43 +31,21 @@ impl Operation for SelfOp {
 // Ref
 //------------------------------------------------------------------------------
 
-pub struct RefOp {
-    id: Id,
-    value: Value,
-}
+op!(
+    name: "ref",
+    builder: ref_,
+    op: RefOp,
+    inputs: {value},
+    outputs: {ref_value},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn ref_(region: &mut Region, value: Value) -> Value {
-    region.push(RefOp { id: Id::new(), value })[0]
-}
-
-impl Operation for RefOp {
-    fn name(&self) -> &str {
-        "ref"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.value]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for RefOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let value = &self.value;
-        quote! { &#value }
+        tokens.extend(quote! { &#value })
     }
 }
 
@@ -96,43 +53,21 @@ impl Operation for RefOp {
 // Use
 //------------------------------------------------------------------------------
 
-pub struct UseOp {
-    id: Id,
-    path: Path,
-}
+op!(
+    name: "use",
+    builder: use_,
+    op: UseOp,
+    inputs: {},
+    outputs: {},
+    attributes: {path: Path},
+    regions: {},
+    terminator: false
+);
 
-pub fn use_(region: &mut Region, path: Path) {
-    region.push(UseOp { id: Id::new(), path });
-}
-
-impl Operation for UseOp {
-    fn name(&self) -> &str {
-        "use"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.path.to_token_stream().to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for UseOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let path = &self.path;
-        quote! { use #path }
+        tokens.extend(quote! { use #path })
     }
 }
 
@@ -140,50 +75,23 @@ impl Operation for UseOp {
 // Destructure
 //------------------------------------------------------------------------------
 
-pub struct DestructureOp {
-    id: Id,
-    structured: Value,
-    ty: Type,
-    bindings: Vec<(Member, Ident)>,
-}
+op!(
+    name: "destructure",
+    builder: destructure,
+    op: DestructureOp,
+    inputs: {structured},
+    outputs: {},
+    attributes: {ty: Type, bindings: Vec<(Member, Ident)>},
+    regions: {},
+    terminator: false
+);
 
-pub fn destructure(region: &mut Region, structured: Value, ty: Type, bindings: Vec<(Member, Ident)>) {
-    region.push(DestructureOp { id: Id::new(), structured, ty, bindings });
-}
-
-impl Operation for DestructureOp {
-    fn name(&self) -> &str {
-        "destructure"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.structured]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        self.bindings
-            .iter()
-            .map(|binding| format!("{}:{}", binding.0.to_token_stream(), binding.1))
-            .collect()
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for DestructureOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let structured = self.structured;
         let members = self.bindings.iter().map(|(member, _)| member);
         let pat = deconstruct_pattern(&self.ty, members.into_iter());
-        quote! { let #pat = #structured }
+        tokens.extend(quote! { let #pat = #structured })
     }
 }
 
@@ -191,43 +99,21 @@ impl Operation for DestructureOp {
 // SymrefOp
 //------------------------------------------------------------------------------
 
-pub struct SymrefOp {
-    id: Id,
-    sym: Ident,
-}
+op!(
+    name: "symref",
+    builder: symref,
+    op: SymrefOp,
+    inputs: {},
+    outputs: {value},
+    attributes: {sym: Ident},
+    regions: {},
+    terminator: false
+);
 
-pub fn symref(region: &mut Region, sym: Ident) -> Value {
-    region.push(SymrefOp { id: Id::new(), sym })[0]
-}
-
-impl Operation for SymrefOp {
-    fn name(&self) -> &str {
-        "symref"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.sym.to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for SymrefOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let sym = &self.sym;
-        quote! { #sym }
+        tokens.extend(quote! { #sym })
     }
 }
 
@@ -236,21 +122,16 @@ impl Operation for SymrefOp {
 //------------------------------------------------------------------------------
 
 pub struct YieldOp {
-    id: Id,
     values: Vec<Value>,
 }
 
 pub fn yield_(region: &mut Region, values: Vec<Value>) {
-    region.push(YieldOp { id: Id::new(), values });
+    region.push(YieldOp { values });
 }
 
 impl Operation for YieldOp {
     fn name(&self) -> &str {
         "yield"
-    }
-
-    fn id(&self) -> Id {
-        self.id
     }
 
     fn inputs(&self) -> Vec<Value> {
@@ -272,14 +153,16 @@ impl Operation for YieldOp {
     fn is_terminator(&self) -> bool {
         true
     }
+}
 
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for YieldOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let values = &self.values;
-        match values.len() {
+        tokens.extend(match values.len() {
             0 => quote! { () },
             1 => quote! { #(#values)* },
             _ => quote! { (#(#values),*) },
-        }
+        });
     }
 }
 
@@ -287,55 +170,24 @@ impl Operation for YieldOp {
 // Member
 //------------------------------------------------------------------------------
 
-pub struct MemberOp {
-    id: Id,
-    value: Value,
-    member: syn::Member,
-    reference: bool,
-}
+op!(
+    name: "member",
+    builder: member,
+    op: MemberOp,
+    inputs: {value},
+    outputs: {member_value},
+    attributes: {member: syn::Member, reference: bool},
+    regions: {},
+    terminator: false
+);
 
-pub fn member(region: &mut Region, value: Value, member: syn::Member, reference: bool) -> Value {
-    region.push(MemberOp { id: Id::new(), value, member, reference })[0]
-}
-
-impl Operation for MemberOp {
-    fn name(&self) -> &str {
-        "member"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.value]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![
-            self.member.to_token_stream().to_string(),
-            match self.reference {
-                true => "ref",
-                false => "val",
-            }
-            .to_owned(),
-        ]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for MemberOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let value = &self.value;
         let member = &self.member;
         match self.reference {
-            false => quote! { #value.#member },
-            true => quote! { &#value.#member },
+            false => tokens.extend(quote! { #value.#member }),
+            true => tokens.extend(quote! { &#value.#member }),
         }
     }
 }
@@ -344,43 +196,21 @@ impl Operation for MemberOp {
 // Try
 //------------------------------------------------------------------------------
 
-pub struct TryOp {
-    id: Id,
-    value: Value,
-}
+op!(
+    name: "try",
+    builder: try_,
+    op: TryOp,
+    inputs: {value},
+    outputs: {result},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn try_(region: &mut Region, value: Value) -> Value {
-    region.push(TryOp { id: Id::new(), value })[0]
-}
-
-impl Operation for TryOp {
-    fn name(&self) -> &str {
-        "try"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.value]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for TryOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let value = &self.value;
-        quote! { #value? }
+        tokens.extend(quote! { #value? })
     }
 }
 
@@ -389,25 +219,13 @@ impl Operation for TryOp {
 //------------------------------------------------------------------------------
 
 pub struct MatchOp {
-    id: Id,
     expr: Value,
     arms: Vec<(syn::Pat, Option<syn::Expr>, Region)>,
+    result: Value,
 }
 
-pub fn match_<'a>(
-    region: &mut Region,
-    expr: Value,
-    arms: impl Iterator<Item = (syn::Pat, Option<syn::Expr>, Box<dyn FnOnce(&mut Region) -> Value>)>,
-) -> Value {
-    let arms = arms
-        .map(|(pattern, guard, arm_fn)| {
-            let mut arm_region = Region::new(0);
-            let result = arm_fn(&mut arm_region);
-            let _ = yield_(&mut arm_region, vec![result]);
-            (pattern, guard, arm_region)
-        })
-        .collect();
-    region.push(MatchOp { id: Id::new(), expr, arms })[0]
+pub fn match_<'a>(region: &mut Region, expr: Value, arms: Vec<(syn::Pat, Option<syn::Expr>, Region)>) -> Value {
+    region.push(MatchOp { expr, arms, result: Value::new() })[0]
 }
 
 impl Operation for MatchOp {
@@ -415,16 +233,12 @@ impl Operation for MatchOp {
         "match"
     }
 
-    fn id(&self) -> Id {
-        self.id
-    }
-
     fn inputs(&self) -> Vec<Value> {
         vec![self.expr]
     }
 
     fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
+        vec![self.result]
     }
 
     fn regions(&self) -> Vec<&Region> {
@@ -443,19 +257,6 @@ impl Operation for MatchOp {
                 }
             })
             .collect()
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
-        let expr = self.expr;
-        let arms = self.arms.iter().map(|(pattern, guard, region)| match guard {
-            Some(guard) => quote! { #pattern if #guard => #region },
-            None => quote! { #pattern => #region },
-        });
-        quote! {
-            match #expr {
-                #(#arms)*
-            }
-        }
     }
 
     fn to_string(&self, alternate: bool) -> String {
@@ -481,53 +282,47 @@ impl Operation for MatchOp {
     }
 }
 
+impl ToTokens for MatchOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let expr = self.expr;
+        let arms = self.arms.iter().map(|(pattern, guard, region)| match guard {
+            Some(guard) => quote! { #pattern if #guard => #region },
+            None => quote! { #pattern => #region },
+        });
+        tokens.extend(quote! {
+            match #expr {
+                #(#arms)*
+            }
+        });
+    }
+}
+
 //------------------------------------------------------------------------------
 // Expr
 //------------------------------------------------------------------------------
 
-/// Introducing [`syn`] expressions into the SSA IR.
-///
-/// This operation is necessary when it's impossible or impractical to convert
-/// an expression to the SSA IR. This is the case, for example, for enum
-/// discriminants, which can be arbitrary expressions like calling a const
-/// function.
-pub struct CustomExprOp {
-    id: Id,
-    expr: syn::Expr,
-}
+// Introducing [`syn`] expressions into the SSA IR.
+//
+// This operation is necessary when it's impossible or impractical to convert
+// an expression to the SSA IR. This is the case, for example, for enum
+// discriminants, which can be arbitrary expressions like calling a const
+// function.
 
-pub fn custom_expr(region: &mut Region, expr: syn::Expr) -> Value {
-    region.push(CustomExprOp { id: Id::new(), expr })[0]
-}
+op!(
+    name: "custom_expr",
+    builder: custom_expr,
+    op: CustomExprOp,
+    inputs: {},
+    outputs: {expr_value},
+    attributes: {expr: syn::Expr},
+    regions: {},
+    terminator: false
+);
 
-impl Operation for CustomExprOp {
-    fn name(&self) -> &str {
-        "custom_expr"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.expr.to_token_stream().to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for CustomExprOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let expr = &self.expr;
-        quote! { #expr }
+        tokens.extend(quote! { #expr })
     }
 }
 
@@ -535,43 +330,21 @@ impl Operation for CustomExprOp {
 // Ok
 //------------------------------------------------------------------------------
 
-pub struct OkOp {
-    id: Id,
-    value: Value,
-}
+op!(
+    name: "ok",
+    builder: ok,
+    op: OkOp,
+    inputs: {value},
+    outputs: {ok_value},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn ok(region: &mut Region, value: Value) -> Value {
-    region.push(OkOp { id: Id::new(), value })[0]
-}
-
-impl Operation for OkOp {
-    fn name(&self) -> &str {
-        "ok"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.value]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for OkOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let value = &self.value;
-        quote! { ::core::result::Result::Ok(#value) }
+        tokens.extend(quote! { ::core::result::Result::Ok(#value) })
     }
 }
 
@@ -580,12 +353,12 @@ impl Operation for OkOp {
 //------------------------------------------------------------------------------
 
 pub struct TupleOp {
-    id: Id,
     members: Vec<Value>,
+    result: Value,
 }
 
 pub fn tuple(region: &mut Region, members: Vec<Value>) -> Value {
-    region.push(TupleOp { id: Id::new(), members })[0]
+    region.push(TupleOp { members, result: Value::new() })[0]
 }
 
 impl Operation for TupleOp {
@@ -593,16 +366,12 @@ impl Operation for TupleOp {
         "tuple"
     }
 
-    fn id(&self) -> Id {
-        self.id
-    }
-
     fn inputs(&self) -> Vec<Value> {
         self.members.clone()
     }
 
     fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
+        vec![self.result]
     }
 
     fn regions(&self) -> Vec<&Region> {
@@ -612,10 +381,12 @@ impl Operation for TupleOp {
     fn attributes(&self) -> Vec<String> {
         vec![]
     }
+}
 
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for TupleOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let members = &self.members;
-        quote! { (#(#members,)*) }
+        tokens.extend(quote! { (#(#members,)*) });
     }
 }
 
@@ -624,30 +395,25 @@ impl Operation for TupleOp {
 //------------------------------------------------------------------------------
 
 pub struct StructOp {
-    id: Id,
-    ty: syn::Type,
+    struct_ty: syn::Type,
     members: Vec<(syn::Member, Value)>,
+    result: Value,
 }
 
-pub fn struct_(region: &mut Region, ty: syn::Type, members: Vec<(syn::Member, Value)>) -> Value {
-    region.push(StructOp { id: Id::new(), ty, members })[0]
+pub fn struct_(region: &mut Region, struct_ty: syn::Type, members: Vec<(syn::Member, Value)>) -> Value {
+    region.push(StructOp { struct_ty, members, result: Value::new() })[0]
 }
 
 impl Operation for StructOp {
     fn name(&self) -> &str {
         "struct"
     }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
     fn inputs(&self) -> Vec<Value> {
         self.members.iter().map(|(_, value)| *value).collect()
     }
 
     fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
+        vec![self.result]
     }
 
     fn regions(&self) -> Vec<&Region> {
@@ -655,18 +421,17 @@ impl Operation for StructOp {
     }
 
     fn attributes(&self) -> Vec<String> {
-        let mut attrs = vec![self.ty.to_token_stream().to_string()];
-        attrs.extend(self.members.iter().map(|(member, _)| match member {
-            syn::Member::Named(ident) => ident.to_string(),
-            syn::Member::Unnamed(index) => index.index.to_string(),
-        }));
+        let mut attrs = vec![self.struct_ty.display()];
+        attrs.extend(self.members.iter().map(|(member, _)| member.display()));
         attrs
     }
+}
 
-    fn to_token_stream(&self) -> TokenStream {
-        let ty = &self.ty;
+impl ToTokens for StructOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let ty = &self.struct_ty;
         let members = self.members.iter().map(|(member, _)| member);
         let values = self.members.iter().map(|(_, value)| value);
-        quote! { #ty{ #(#members: #values,)* } }
+        tokens.extend(quote! { #ty{ #(#members: #values,)* } });
     }
 }

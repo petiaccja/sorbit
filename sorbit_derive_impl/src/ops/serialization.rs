@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 
 use crate::attribute::ByteOrder;
-use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::ir::op;
 use crate::ops::constants::{
     BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
     TRACE_ERROR_TRAIT,
@@ -12,43 +12,21 @@ use crate::ops::constants::{
 // Success
 //------------------------------------------------------------------------------
 
-struct SuccessOp {
-    id: Id,
-    serializer: Value,
-}
+op!(
+    name: "success",
+    builder: success,
+    op: SuccessOp,
+    inputs: {serializer},
+    outputs: {success_result},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn success(region: &mut Region, serializer: Value) -> Value {
-    region.push(SuccessOp { id: Id::new(), serializer })[0]
-}
-
-impl Operation for SuccessOp {
-    fn name(&self) -> &str {
-        "success"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for SuccessOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
-        quote! { #SERIALIZER_TRAIT::success(#serializer) }
+        tokens.extend(quote! { #SERIALIZER_TRAIT::success(#serializer) })
     }
 }
 
@@ -56,45 +34,22 @@ impl Operation for SuccessOp {
 // Error
 //------------------------------------------------------------------------------
 
-struct ErrorOp {
-    id: Id,
-    deserializer: Value,
-    message: String,
-}
+op!(
+    name: "error",
+    builder: error,
+    op: ErrorOp,
+    inputs: {deserializer},
+    outputs: {error_result},
+    attributes: {message: String},
+    regions: {},
+    terminator: false
+);
 
-pub fn error(region: &mut Region, deserializer: Value, message: String) -> Value {
-    region.push(ErrorOp { id: Id::new(), deserializer, message })[0]
-}
-
-impl Operation for ErrorOp {
-    fn name(&self) -> &str {
-        "error"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.message.clone()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for ErrorOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let message = &self.message;
-        quote! { #DESERIALIZER_TRAIT::error(#deserializer, #message) }
+        tokens.extend(quote! { #DESERIALIZER_TRAIT::error(#deserializer, #message) })
     }
 }
 
@@ -102,48 +57,24 @@ impl Operation for ErrorOp {
 // Pad
 //------------------------------------------------------------------------------
 
-struct PadOp {
-    id: Id,
-    serializer: Value,
-    until: u64,
-    serializing: bool,
-}
+op!(
+    name: "pad",
+    builder: pad,
+    op: PadOp,
+    inputs: {serializer},
+    outputs: {padded_serializer},
+    attributes: {until: u64, serializing: bool},
+    regions: {},
+    terminator: false
+);
 
-pub fn pad(region: &mut Region, serializer: Value, until: u64, serializing: bool) -> Value {
-    region.push(PadOp { id: Id::new(), serializer, until, serializing })[0]
-}
-
-impl Operation for PadOp {
-    fn name(&self) -> &str {
-        "pad"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.until.to_string(), self.serializing.to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for PadOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let until = self.until;
         match self.serializing {
-            true => quote! { #SERIALIZER_TRAIT::pad(#serializer, #until) },
-            false => quote! { #DESERIALIZER_TRAIT::pad(#serializer, #until) },
+            true => tokens.extend(quote! { #SERIALIZER_TRAIT::pad(#serializer, #until) }),
+            false => tokens.extend(quote! { #DESERIALIZER_TRAIT::pad(#serializer, #until) }),
         }
     }
 }
@@ -152,48 +83,24 @@ impl Operation for PadOp {
 // Align
 //------------------------------------------------------------------------------
 
-struct AlignOp {
-    id: Id,
-    serializer: Value,
-    multiple_of: u64,
-    serializing: bool,
-}
+op!(
+    name: "align",
+    builder: align,
+    op: AlignOp,
+    inputs: {serializer},
+    outputs: {aligned_serializer},
+    attributes: {multiple_of: u64, serializing: bool},
+    regions: {},
+    terminator: false
+);
 
-pub fn align(region: &mut Region, serializer: Value, multiple_of: u64, serializing: bool) -> Value {
-    region.push(AlignOp { id: Id::new(), serializer, multiple_of, serializing })[0]
-}
-
-impl Operation for AlignOp {
-    fn name(&self) -> &str {
-        "align"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.multiple_of.to_string(), self.serializing.to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for AlignOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let multiple_of = self.multiple_of;
         match self.serializing {
-            true => quote! { #SERIALIZER_TRAIT::align(#serializer, #multiple_of) },
-            false => quote! { #DESERIALIZER_TRAIT::align(#serializer, #multiple_of) },
+            true => tokens.extend(quote! { #SERIALIZER_TRAIT::align(#serializer, #multiple_of) }),
+            false => tokens.extend(quote! { #DESERIALIZER_TRAIT::align(#serializer, #multiple_of) }),
         }
     }
 }
@@ -202,47 +109,23 @@ impl Operation for AlignOp {
 // Annotate result
 //------------------------------------------------------------------------------
 
-#[allow(unused)]
-struct AnnotateResultOp {
-    id: Id,
-    result: Value,
-    annotation: String,
-}
+op!(
+    name: "annotate_result",
+    builder: annotate_result,
+    op: AnnotateResultOp,
+    inputs: {result},
+    outputs: {annotated_result},
+    attributes: {annotation: String},
+    regions: {},
+    terminator: false
+);
 
 #[allow(unused)]
-pub fn annotate_result(region: &mut Region, result: Value, annotation: String) -> Value {
-    region.push(AnnotateResultOp { id: Id::new(), result, annotation })[0]
-}
-
-impl Operation for AnnotateResultOp {
-    fn name(&self) -> &str {
-        "annotate_result"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.result]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.annotation.clone()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for AnnotateResultOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let result = &self.result;
         let annotation = &self.annotation;
-        quote! { #result.map_err(|err| #TRACE_ERROR_TRAIT::annotate(err, #annotation)) }
+        tokens.extend(quote! { #result.map_err(|err| #TRACE_ERROR_TRAIT::annotate(err, #annotation)) })
     }
 }
 
@@ -250,45 +133,22 @@ impl Operation for AnnotateResultOp {
 // Serialize object
 //------------------------------------------------------------------------------
 
-struct SerializeObjectOp {
-    id: Id,
-    serializer: Value,
-    object: Value,
-}
+op!(
+    name: "serialize_object",
+    builder: serialize_object,
+    op: SerializeObjectOp,
+    inputs: {serializer, object},
+    outputs: {serialized_object},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
 
-pub fn serialize_object(region: &mut Region, serializer: Value, object: Value) -> Value {
-    region.push(SerializeObjectOp { id: Id::new(), serializer, object })[0]
-}
-
-impl Operation for SerializeObjectOp {
-    fn name(&self) -> &str {
-        "serialize_object"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer, self.object]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for SerializeObjectOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let object = &self.object;
-        quote! { #SERIALIZE_TRAIT::serialize(#object, #serializer) }
+        tokens.extend(quote! { #SERIALIZE_TRAIT::serialize(#object, #serializer) })
     }
 }
 
@@ -296,56 +156,27 @@ impl Operation for SerializeObjectOp {
 // Serialize composite
 //------------------------------------------------------------------------------
 
-struct SerializeCompositeOp {
-    id: Id,
-    serializer: Value,
-    body: Region,
-}
+op!(
+    name: "serialize_composite",
+    builder: serialize_composite,
+    op: SerializeCompositeOp,
+    inputs: {serializer},
+    outputs: {composite_result},
+    attributes: {},
+    regions: {body},
+    terminator: false
+);
 
-pub fn serialize_composite(region: &mut Region, serializer: Value, body: impl FnOnce(&mut Region, Value)) -> Value {
-    let body = {
-        let mut region = Region::new(1);
-        let se_inner = region.arguments()[0];
-        body(&mut region, se_inner);
-        region
-    };
-    region.push(SerializeCompositeOp { id: Id::new(), serializer, body })[0]
-}
-
-impl Operation for SerializeCompositeOp {
-    fn name(&self) -> &str {
-        "serialize_composite"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for SerializeCompositeOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let body = &self.body;
         let inner_serializer = body.arguments()[0];
-        quote! {
+        tokens.extend(quote! {
             #SERIALIZER_TRAIT::serialize_composite(#serializer, |#inner_serializer| {
                 #body
             })
-        }
+        })
     }
 }
 
@@ -353,45 +184,22 @@ impl Operation for SerializeCompositeOp {
 // Deserialize object
 //------------------------------------------------------------------------------
 
-struct DeserializeObjectOp {
-    id: Id,
-    deserializer: Value,
-    ty: syn::Type,
-}
+op!(
+    name: "deserialize_object",
+    builder: deserialize_object,
+    op: DeserializeObjectOp,
+    inputs: {deserializer},
+    outputs: {deserialized_object},
+    attributes: {ty: syn::Type},
+    regions: {},
+    terminator: false
+);
 
-pub fn deserialize_object(region: &mut Region, deserializer: Value, ty: syn::Type) -> Value {
-    region.push(DeserializeObjectOp { id: Id::new(), deserializer, ty })[0]
-}
-
-impl Operation for DeserializeObjectOp {
-    fn name(&self) -> &str {
-        "deserialize_object"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.ty.to_token_stream().to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for DeserializeObjectOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let ty = &self.ty;
-        quote! { <#ty as #DESERIALIZE_TRAIT>::deserialize(#deserializer)}
+        tokens.extend(quote! { <#ty as #DESERIALIZE_TRAIT>::deserialize(#deserializer)})
     }
 }
 
@@ -399,56 +207,27 @@ impl Operation for DeserializeObjectOp {
 // Deserialize composite
 //------------------------------------------------------------------------------
 
-pub struct DeserializeCompositeOp {
-    id: Id,
-    deserializer: Value,
-    body: Region,
-}
+op!(
+    name: "deserialize_composite",
+    builder: deserialize_composite,
+    op: DeserializeCompositeOp,
+    inputs: {deserializer},
+    outputs: {composite_result},
+    attributes: {},
+    regions: {body},
+    terminator: false
+);
 
-pub fn deserialize_composite(region: &mut Region, deserializer: Value, body: impl FnOnce(&mut Region, Value)) -> Value {
-    let body = {
-        let mut region = Region::new(1);
-        let de_inner = region.arguments()[0];
-        body(&mut region, de_inner);
-        region
-    };
-    region.push(DeserializeCompositeOp { id: Id::new(), deserializer, body })[0]
-}
-
-impl Operation for DeserializeCompositeOp {
-    fn name(&self) -> &str {
-        "deserialize_composite"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.deserializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for DeserializeCompositeOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let body = &self.body;
         let inner_deserializer = self.body.arguments()[0];
-        quote! {
+        tokens.extend(quote! {
             #DESERIALIZER_TRAIT::deserialize_composite(#deserializer, |#inner_deserializer| {
                 #body
             })
-        }
+        })
     }
 }
 
@@ -456,56 +235,19 @@ impl Operation for DeserializeCompositeOp {
 // Deserialize byte order
 //------------------------------------------------------------------------------
 
-struct ByteOrderOp {
-    id: Id,
-    serializer: Value,
-    byte_order: ByteOrder,
-    is_serializing: bool,
-    body: Region,
-}
+op!(
+    name: "byte_order",
+    builder: byte_order,
+    op: ByteOrderOp,
+    inputs: {serializer},
+    outputs: {ordered_result},
+    attributes: {byte_order: ByteOrder, is_serializing: bool},
+    regions: {body},
+    terminator: false
+);
 
-pub fn byte_order(
-    region: &mut Region,
-    serializer: Value,
-    byte_order: ByteOrder,
-    is_serializing: bool,
-    body: impl FnOnce(&mut Region, Value),
-) -> Value {
-    let body = {
-        let mut region = Region::new(1);
-        let de_inner = region.arguments()[0];
-        body(&mut region, de_inner);
-        region
-    };
-    region.push(ByteOrderOp { id: Id::new(), serializer, byte_order, is_serializing, body })[0]
-}
-
-impl Operation for ByteOrderOp {
-    fn name(&self) -> &str {
-        "byte_order"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![self.serializer]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![self.id.value(0)]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![format!("{:?}", self.byte_order)]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for ByteOrderOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         use crate::attribute::ByteOrder::*;
         let se = &self.serializer;
         let body = &self.body;
@@ -515,16 +257,16 @@ impl Operation for ByteOrderOp {
             false => quote! { #DESERIALIZER_TRAIT },
         };
         match self.byte_order {
-            BigEndian => quote! {
+            BigEndian => tokens.extend(quote! {
                 #trait_::with_byte_order(#se, #BIG_ENDIAN, |#inner| {
                     #body
                 })
-            },
-            LittleEndian => quote! {
+            }),
+            LittleEndian => tokens.extend(quote! {
                 #trait_::with_byte_order(#se, #LITTLE_ENDIAN, |#inner| {
                     #body
                 })
-            },
+            }),
         }
     }
 }

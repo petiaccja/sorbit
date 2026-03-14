@@ -1,69 +1,34 @@
-use crate::ir::dag::{Id, Operation, Region, Value};
+use crate::ir::op;
 use crate::ops::constants::{
     DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT,
     SERIALIZER_TRAIT, SERIALIZER_TYPE,
 };
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 
 //------------------------------------------------------------------------------
 // Serialize trait impl
 //------------------------------------------------------------------------------
 
-pub struct ImplSerializeOp {
-    id: Id,
-    name: syn::Ident,
-    generics: syn::Generics,
-    body: Region,
-}
+op!(
+    name: "impl_serialize",
+    builder: impl_serialize,
+    op: ImplSerializeOp,
+    inputs: {},
+    outputs: {},
+    attributes: {name: syn::Ident, generics: syn::Generics},
+    regions: {body},
+    terminator: false
+);
 
-pub fn impl_serialize(
-    region: &mut Region,
-    name: syn::Ident,
-    generics: syn::Generics,
-    body: impl FnOnce(&mut Region, Value),
-) {
-    let body = {
-        let mut region = Region::new(1);
-        let serializer = region.arguments()[0];
-        body(&mut region, serializer);
-        region
-    };
-    region.push(ImplSerializeOp { id: Id::new(), name, generics, body });
-}
-
-impl Operation for ImplSerializeOp {
-    fn name(&self) -> &str {
-        "impl_serialize"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.name.to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for ImplSerializeOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
         let body = &self.body;
         let serializer = body.arguments()[0];
 
-        quote! {
+        tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause{
                 fn serialize<#SERIALIZER_TYPE: #SERIALIZER_TRAIT>(
@@ -77,7 +42,7 @@ impl Operation for ImplSerializeOp {
                     #body
                 }
             }
-        }
+        })
     }
 }
 
@@ -85,60 +50,25 @@ impl Operation for ImplSerializeOp {
 // Deserialize trait impl
 //------------------------------------------------------------------------------
 
-pub struct ImplDeserializeOp {
-    id: Id,
-    name: syn::Ident,
-    generics: syn::Generics,
-    body: Region,
-}
+op!(
+    name: "impl_deserialize",
+    builder: impl_deserialize,
+    op: ImplDeserializeOp,
+    inputs: {},
+    outputs: {},
+    attributes: {name: syn::Ident, generics: syn::Generics},
+    regions: {body},
+    terminator: false
+);
 
-pub fn impl_deserialize(
-    region: &mut Region,
-    name: syn::Ident,
-    generics: syn::Generics,
-    body: impl FnOnce(&mut Region, Value),
-) {
-    let body = {
-        let mut region = Region::new(1);
-        let deserializer = region.arguments()[0];
-        body(&mut region, deserializer);
-        region
-    };
-    region.push(ImplDeserializeOp { id: Id::new(), name, generics, body });
-}
-
-impl Operation for ImplDeserializeOp {
-    fn name(&self) -> &str {
-        "impl_deserialize"
-    }
-
-    fn id(&self) -> Id {
-        self.id
-    }
-
-    fn inputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn outputs(&self) -> Vec<Value> {
-        vec![]
-    }
-
-    fn regions(&self) -> Vec<&Region> {
-        vec![&self.body]
-    }
-
-    fn attributes(&self) -> Vec<String> {
-        vec![self.name.to_string()]
-    }
-
-    fn to_token_stream(&self) -> TokenStream {
+impl ToTokens for ImplDeserializeOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         let name = &self.name;
         let body = &self.body;
         let deserializer = body.arguments()[0];
 
-        quote! {
+        tokens.extend(quote! {
             #[automatically_derived]
             impl #impl_generics #DESERIALIZE_TRAIT for #name #ty_generics #where_clause{
                 fn deserialize<#DESERIALIZER_TYPE: #DESERIALIZER_TRAIT>(
@@ -151,6 +81,6 @@ impl Operation for ImplDeserializeOp {
                     #body
                 }
             }
-        }
+        })
     }
 }
