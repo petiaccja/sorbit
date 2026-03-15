@@ -1,8 +1,8 @@
 use crate::{
     byte_order::ByteOrder,
     error::{Error, ErrorKind},
-    io::Read,
-    ser_de::Deserializer,
+    io::{Bounded, BoundedSection, Read},
+    ser_de::{BoundedDeserializer, Deserializer},
 };
 
 /// A [`Deserializer`] that works with any [`Read`]-able stream.
@@ -111,7 +111,7 @@ impl<Stream: Read> StreamDeserializer<Stream> {
         // Explode nested and restore self's buffer.
         // Nested's byte order and base are discarded.
         {
-            let Self { stream, byte_order: _, stream_pos: stream_len, composite_base: _ } = nested;
+            let Self { stream, stream_pos: stream_len, .. } = nested;
             self.stream = stream;
             self.stream_pos = stream_len;
         };
@@ -123,6 +123,7 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
     type Error = Error;
     type CompositeDeserializer = Self;
     type ByteOrderDeserializer = Self;
+    type BoundedDeserializer = StreamDeserializer<BoundedSection<Stream>>;
 
     fn deserialize_bool(&mut self) -> Result<bool, Self::Error> {
         let byte: [u8; 1] = self.read_fixed()?;
@@ -200,8 +201,41 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
         self.nest(deserialize_members, Some(byte_order), None)
     }
 
+    fn deserialize_bounded<O>(
+        &mut self,
+        byte_count: u64,
+        deserialize_object: impl FnOnce(&mut Self::BoundedDeserializer) -> Result<O, Self::Error>,
+    ) -> Result<O, Self::Error> {
+        // Borrow self's buffer and create a nested serializer.
+        let mut nested = StreamDeserializer {
+            stream: self.stream.take().map(|stream| BoundedSection::new(stream, byte_count)),
+            byte_order: self.byte_order,
+            stream_pos: self.stream_pos,
+            composite_base: self.composite_base,
+        };
+        let result = deserialize_object(&mut nested);
+        // Explode nested and restore self's buffer.
+        // Nested's byte order and base are discarded.
+        {
+            let StreamDeserializer { stream, stream_pos: stream_len, .. } = nested;
+            self.stream = stream.map(|bounded_section| bounded_section.into_inner());
+            self.stream_pos = stream_len;
+        };
+        result
+    }
+
     fn error<O>(&self, message: &'static str) -> Result<O, Self::Error> {
         Err(Self::Error::from(ErrorKind::Custom(message)))
+    }
+}
+
+impl<Stream: Read + Bounded> BoundedDeserializer for StreamDeserializer<Stream> {
+    fn remaining_bytes(&self) -> u64 {
+        self.stream.as_ref().expect(UNWRAP_STREAM_MSG).remaining_bytes()
+    }
+
+    fn is_finished(&self) -> bool {
+        self.stream.as_ref().expect(UNWRAP_STREAM_MSG).is_finished()
     }
 }
 
@@ -374,6 +408,29 @@ mod tests {
         assert_eq!(s.deserialize_u16(), Ok(0xEEFF));
         assert_eq!(s.with_byte_order(ByteOrder::LittleEndian, |s| s.deserialize_u16()), Ok(0xAABB));
         assert_eq!(s.deserialize_u16(), Ok(0xFFEE));
+    }
+
+    //--------------------------------------------------------------------------
+    // Deserialize bounded
+    //--------------------------------------------------------------------------
+    #[test]
+    fn deserialize_bounded_eof() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE])).big_endian();
+        assert_eq!(s.deserialize_bounded(1, |de| de.deserialize_u16()), Err(ErrorKind::UnexpectedEof.into()));
+    }
+
+    #[test]
+    fn deserialize_bounded_exact() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE])).big_endian();
+        assert_eq!(s.deserialize_bounded(2, |de| de.deserialize_u16()), Ok(0xEEFF));
+        assert_eq!(s.deserialize_u16(), Ok(0xBBAA));
+    }
+
+    #[test]
+    fn deserialize_bounded_more() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE])).big_endian();
+        assert_eq!(s.deserialize_bounded(3, |de| de.deserialize_u16()), Ok(0xEEFF));
+        assert_eq!(s.deserialize_u16(), Ok(0xBBAA));
     }
 
     //--------------------------------------------------------------------------

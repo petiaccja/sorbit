@@ -1,5 +1,8 @@
 use super::stream::{Read, Seek, SeekFrom, Write};
-use crate::error::{Error, ErrorKind};
+use crate::{
+    error::{Error, ErrorKind},
+    io::Bounded,
+};
 
 /// A stream with an in-memory buffer that has a fixed size.
 ///
@@ -63,6 +66,12 @@ impl<Buffer: AsRef<[u8]>> Seek for FixedMemoryStream<Buffer> {
 
     fn stream_len(&mut self) -> Result<u64, Error> {
         Ok(self.buffer.as_ref().len() as u64)
+    }
+}
+
+impl<Buffer: AsRef<[u8]>> Bounded for FixedMemoryStream<Buffer> {
+    fn remaining_bytes(&self) -> u64 {
+        (self.buffer.as_ref().len() - self.stream_pos) as u64
     }
 }
 

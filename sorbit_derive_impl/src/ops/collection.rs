@@ -61,9 +61,9 @@ impl ToTokens for ItemsOp {
 }
 
 op!(
-    name: "deserialize_items_exact",
-    builder: deserialize_items_exact,
-    op: DeserializeItemsExactOp,
+    name: "deserialize_items_by_len",
+    builder: deserialize_items_by_len,
+    op: DeserializeItemsByLenOp,
     inputs: {deserializer, len},
     outputs: {collection_value},
     attributes: {collection_ty: syn::Type},
@@ -71,15 +71,40 @@ op!(
     terminator: false
 );
 
-impl ToTokens for DeserializeItemsExactOp {
+impl ToTokens for DeserializeItemsByLenOp {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let len = &self.len;
         let collection_ty = &self.collection_ty;
         tokens.extend(quote! {
-            ::sorbit::collection::deserialize_items_exact::<#collection_ty, _, _, _>(
+            ::sorbit::collection::deserialize_items_by_len::<#collection_ty, _, _, _>(
                 #deserializer,
                 #len
+            )
+        })
+    }
+}
+
+op!(
+    name: "deserialize_items_by_byte_count",
+    builder: deserialize_items_by_byte_count,
+    op: DeserializeItemsByByteCountOp,
+    inputs: {deserializer, byte_count},
+    outputs: {collection_value},
+    attributes: {collection_ty: syn::Type},
+    regions: {},
+    terminator: false
+);
+
+impl ToTokens for DeserializeItemsByByteCountOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let deserializer = &self.deserializer;
+        let byte_count = &self.byte_count;
+        let collection_ty = &self.collection_ty;
+        tokens.extend(quote! {
+            ::sorbit::collection::deserialize_items_by_byte_count::<#collection_ty, _, _, _>(
+                #deserializer,
+                #byte_count
             )
         })
     }

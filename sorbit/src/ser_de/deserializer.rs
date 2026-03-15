@@ -1,5 +1,36 @@
 use crate::{bit::Error as BitError, byte_order::ByteOrder, error::TraceError};
 
+/// A deserializer that can tell you if there are any bytes left from which
+/// you can deserialize.
+///
+/// For some objects, their size is not known, and they need to be deserialized
+/// until the underlying stream is exhausted. In essence, serialization ends
+/// when an end of file error is received.
+///
+/// Using EOF as the marker has a major downside. Imagine your object is a
+/// sequence where each element is 4 bytes. Then, 20 bytes will deserialize
+/// to a sequence of 5 items, with the 6th raising an EOF error. This is
+/// perfectly normal. However, when you have 22 bytes, you will also deserialize
+/// 5 items, with the 6th raising an EOF error, but now your data is invalid,
+/// because you only have half of the 6th element.
+///
+/// To differentiate between these two cases, you need a [BoundedDeserializer]
+/// which can tell when it ended gracefully.
+pub trait BoundedDeserializer {
+    /// Return whether the underlying stream is at its end.
+    ///
+    /// See [`Bounded::is_finished`](crate::io::Bounded::is_finished).
+    fn is_finished(&self) -> bool {
+        self.remaining_bytes() == 0
+    }
+
+    /// Return the number of bytes that can still be read/written
+    /// from/to the underlying stream.
+    ///
+    /// See [`Bounded::remaining_bytes`](crate::io::Bounded::remaining_bytes).
+    fn remaining_bytes(&self) -> u64;
+}
+
 /// Derializers can transform a stream of bytes that can
 /// be sent over the network or stored in files into primitive types.
 pub trait Deserializer: Sized {
@@ -13,6 +44,10 @@ pub trait Deserializer: Sized {
     /// The type of the deserializer passed to the member deserializer in
     /// [`Self::with_byte_order`].
     type ByteOrderDeserializer: Deserializer<Error = Self::Error>;
+
+    /// The type of the deserializer passed to the object deserializer in
+    /// [`Self::deserialize_bounded`].
+    type BoundedDeserializer: Deserializer<Error = Self::Error> + BoundedDeserializer;
 
     /// Deserialize a [`bool`] value.
     fn deserialize_bool(&mut self) -> Result<bool, Self::Error>;
@@ -97,6 +132,21 @@ pub trait Deserializer: Sized {
         &mut self,
         byte_order: ByteOrder,
         deserialize_members: impl FnOnce(&mut Self::ByteOrderDeserializer) -> Result<O, Self::Error>,
+    ) -> Result<O, Self::Error>;
+
+    /// Deserialize an object of known length.
+    ///
+    /// This is useful when you cannot tell where the object ends based on its
+    /// contents. With this approach, you can just deserialize until the end of
+    /// the section deserializer provided.
+    ///
+    /// When the bounded section is not exhausted, the remaining bytes aren't
+    /// discarded. They will be deserialized by the next operation on the
+    /// serializer. To ignore those bytes, you have to manually pad.
+    fn deserialize_bounded<O>(
+        &mut self,
+        byte_count: u64,
+        deserialize_object: impl FnOnce(&mut Self::BoundedDeserializer) -> Result<O, Self::Error>,
     ) -> Result<O, Self::Error>;
 
     /// Return an error, indicating that deserialization failed.

@@ -1,6 +1,9 @@
-use sorbit::{/*Deserialize,*/ Serialize, ser_de::ToBytes};
+use sorbit::{
+    Deserialize, Serialize,
+    ser_de::{FromBytes, ToBytes},
+};
 
-#[derive(Debug, Serialize, /*Deserialize,*/ PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[sorbit(byte_order=big_endian)]
 struct ByByteCount {
     #[sorbit(value=byte_count(collection))]
@@ -8,7 +11,7 @@ struct ByByteCount {
     collection: Vec<u16>,
 }
 
-#[derive(Debug, Serialize, /*Deserialize,*/ PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[sorbit(byte_order=big_endian)]
 struct ByByteCountBit {
     #[sorbit(bit_field=b, repr=u16, bits=0..12)]
@@ -43,11 +46,16 @@ fn serialize() {
 }
 
 #[test]
+fn deserialize() {
+    assert_eq!(ByByteCount::from_bytes(&BY_BYTE_COUNT_BYTES), Ok(by_byte_count_value(true)));
+}
+
+#[test]
 fn serialize_bit() {
     assert_eq!(by_byte_count_value_bit(false).to_bytes(), Ok(BY_BYTE_COUNT_BIT_BYTES.into()));
 }
 
-// #[test]
-// fn deserialize() {
-//     assert_eq!(from_bytes::<ByLength>(&BY_LENGTH_BYTES), Ok(by_length_value(true)));
-// }
+#[test]
+fn deserialize_bit() {
+    assert_eq!(ByByteCountBit::from_bytes(&BY_BYTE_COUNT_BIT_BYTES), Ok(by_byte_count_value_bit(true)));
+}

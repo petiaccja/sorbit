@@ -10,10 +10,9 @@ use crate::attribute::Transform;
 use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
 use crate::ops::constants::BIT_FIELD_TYPE;
-use crate::ops::items;
-use crate::ops::{deserialize_items_exact, len};
 use crate::ops::{
-    deserialize_object, empty_bit_field, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
+    deserialize_items_by_byte_count, deserialize_items_by_len, deserialize_object, empty_bit_field, items, len,
+    pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
 use crate::r#struct::parse::FieldLayoutProperties;
 use crate::utility::member_to_ident;
@@ -111,9 +110,12 @@ impl ToDeserializeOp for Field {
                         Transform::ByteCount(_) => deserialize_object(region, de, ty.clone()),
                         Transform::LengthBy(len_by) => {
                             let len = symref(region, member_to_ident(len_by.clone()));
-                            deserialize_items_exact(region, de, len, ty.clone())
+                            deserialize_items_by_len(region, de, len, ty.clone())
                         }
-                        Transform::ByteCountBy(member) => todo!(),
+                        Transform::ByteCountBy(byte_count_by) => {
+                            let byte_count = symref(region, member_to_ident(byte_count_by.clone()));
+                            deserialize_items_by_byte_count(region, de, byte_count, ty.clone())
+                        }
                     });
                 vec![result]
             }

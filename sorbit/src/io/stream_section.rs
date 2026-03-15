@@ -10,6 +10,9 @@ use crate::io::{Read, Seek, SeekFrom, Write};
 /// want to avoid modifying anything but bytes 250-500. In that case, you can
 /// create a stream section for those bytes, acting as a single 250-byte-long
 /// stream. Everything outside the 250-500 range will then turn into an EOF.
+///
+/// This is similar to a [`BoundedSection`](crate::io::BoundedSection), but it
+/// lets you seek as well.
 #[derive(Debug)]
 pub struct StreamSection<Stream> {
     stream: Stream,

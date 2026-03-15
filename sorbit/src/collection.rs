@@ -1,6 +1,6 @@
 //! Utilities for serializing collections, like `Vec`.
 
-use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer, Span};
+use crate::ser_de::{BoundedDeserializer, Deserialize, Deserializer, Serialize, Serializer, Span};
 
 /// Return the length of a collection as a specific (integer) type.
 ///
@@ -47,8 +47,8 @@ pub fn items<'collection, Collection>(collection: &'collection Collection) -> It
     Items { collection }
 }
 
-/// Deserialize a collection given the number of its elements is given exactly.
-pub fn deserialize_items_exact<Collection, Item, D, Len>(
+/// Deserialize a collection given the number of its elements is given.
+pub fn deserialize_items_by_len<Collection, Item, D, Len>(
     deserializer: &mut D,
     len: &Len,
 ) -> Result<Collection, D::Error>
@@ -59,11 +59,33 @@ where
     usize: TryFrom<Len>,
     Len: Clone,
 {
-    if let Ok(len) = usize::try_from(len.clone()) {
-        (0..len).into_iter().map(|_| Item::deserialize(deserializer)).collect()
-    } else {
-        deserializer.error("the length of the collection can not be converted into a `usize`")
-    }
+    let Ok(len) = usize::try_from(len.clone()) else {
+        return deserializer.error("the length of the collection can not be converted into a `usize`");
+    };
+    (0..len).into_iter().map(|_| Item::deserialize(deserializer)).collect()
+}
+
+/// Deserialize a collection given the number of bytes is given.
+pub fn deserialize_items_by_byte_count<Collection, Item, D, Len>(
+    deserializer: &mut D,
+    byte_count: &Len,
+) -> Result<Collection, D::Error>
+where
+    D: Deserializer,
+    Item: Deserialize,
+    Collection: FromIterator<Item>,
+    usize: TryFrom<Len>,
+    Len: Clone,
+{
+    let Ok(byte_count) = usize::try_from(byte_count.clone()) else {
+        return deserializer.error("the length of the collection can not be converted into a `usize`");
+    };
+    deserializer.deserialize_bounded(byte_count as u64, |deserializer| {
+        (0..)
+            .into_iter()
+            .map_while(|_| (!deserializer.is_finished()).then(|| Item::deserialize(deserializer)))
+            .collect()
+    })
 }
 
 /// The items of a collection.
