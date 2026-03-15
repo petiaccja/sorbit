@@ -6,7 +6,7 @@ use std::{
 use syn::{Expr, Ident, Path, Type, spanned::Spanned};
 
 use crate::attribute::{
-    BitNumbering, ByteOrder, Transform, as_bit_numbering, as_byte_order, as_ident, as_literal_int,
+    BitNumbering, ByteOrder, Transform, as_bit_numbering, as_byte_order, as_ident, as_literal_bool, as_literal_int,
     as_literal_int_range, as_transform, as_type, parse_nvp_attribute_group, path,
 };
 
@@ -29,12 +29,14 @@ pub enum Field {
     Direct {
         ident: Option<Ident>,
         ty: Type,
+        multi_pass: Option<bool>,
         transform: Transform,
         layout_properties: FieldLayoutProperties,
     },
     Bit {
         ident: Option<Ident>,
         ty: Type,
+        multi_pass: Option<bool>,
         transform: Transform,
         bits: Range<u8>,
         storage_ident: Ident,
@@ -96,14 +98,15 @@ impl Field {
         parameters: HashMap<Path, Expr>,
     ) -> Result<Field, syn::Error> {
         let accepted_parameters = [
-            &[path::value()] as &[Path],
+            &[path::multi_pass(), path::value()] as &[Path],
             &FieldLayoutProperties::accepted_parameters() as &[Path],
         ];
         check_invalid_parameters(&parameters, accepted_parameters.into_iter().flatten())?;
 
+        let multi_pass = parameters.get(&path::multi_pass()).map(as_literal_bool).transpose()?;
         let transform = parameters.get(&path::value()).map(as_transform).transpose()?.unwrap_or_default();
         let layout_properties = FieldLayoutProperties::from_parameters(&parameters)?;
-        Ok(Self::Direct { ident, ty, transform, layout_properties })
+        Ok(Self::Direct { ident, ty, multi_pass, transform, layout_properties })
     }
 
     fn parse_bit_field(ident: Option<Ident>, ty: Type, parameters: HashMap<Path, Expr>) -> Result<Field, syn::Error> {
@@ -114,6 +117,7 @@ impl Field {
         ];
         check_invalid_parameters(&parameters, accepted_parameters.into_iter().flatten())?;
 
+        let multi_pass = parameters.get(&path::multi_pass()).map(as_literal_bool).transpose()?;
         let transform = parameters.get(&path::value()).map(as_transform).transpose()?.unwrap_or_default();
         let bits = parameters
             .get(&path::bit_range())
@@ -133,7 +137,7 @@ impl Field {
         let storage_properties = BitFieldStorageProperties::from_parameters(&parameters)?;
         let layout_properties = FieldLayoutProperties::from_parameters(&parameters)?;
 
-        Ok(Self::Bit { ident, ty, transform, bits, storage_ident, storage_properties, layout_properties })
+        Ok(Self::Bit { ident, ty, multi_pass, transform, bits, storage_ident, storage_properties, layout_properties })
     }
 }
 
@@ -196,6 +200,7 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: Default::default(),
         };
@@ -212,6 +217,7 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: Default::default(),
         };
@@ -228,6 +234,7 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
@@ -251,6 +258,7 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
@@ -303,6 +311,7 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             bits: 1..3,
             storage_ident: parse_quote!(_bit_field),
@@ -323,6 +332,7 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             bits: 1..3,
             storage_ident: parse_quote!(_bit_field),
@@ -343,6 +353,7 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             bits: 1..3,
             storage_ident: parse_quote!(_bit_field),
@@ -362,6 +373,7 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             bits: 1..3,
             storage_ident: parse_quote!(_bit_field),
@@ -389,6 +401,7 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
             transform: Transform::None,
             bits: 1..3,
             storage_ident: parse_quote!(_bit_field),

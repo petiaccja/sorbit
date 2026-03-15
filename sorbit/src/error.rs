@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
+    OutOfBounds,
     LengthExceedsPadding,
     UnexpectedEof,
     InvalidEnumVariant,
@@ -94,6 +95,7 @@ impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use ErrorKind::*;
         match self {
+            OutOfBounds => write!(f, "reading/writing outside readable/writable area of the stream"),
             LengthExceedsPadding => write!(f, "the current length of the buffer already exceeds the requested padding"),
             UnexpectedEof => write!(f, "end of file reached, cannot read/write more data"),
             InvalidEnumVariant => write!(f, "the numeric value does not correspond to an enum or bool variant"),

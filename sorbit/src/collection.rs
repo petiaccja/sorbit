@@ -1,6 +1,6 @@
 //! Utilities for serializing collections, like `Vec`.
 
-use crate::ser_de::{BoundedDeserializer, Deserialize, Deserializer, Serialize, Serializer, Span};
+use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer, Span};
 
 /// Return the length of a collection as a specific (integer) type.
 ///
@@ -83,7 +83,10 @@ where
     deserializer.deserialize_bounded(byte_count as u64, |deserializer| {
         (0..)
             .into_iter()
-            .map_while(|_| (!deserializer.is_finished()).then(|| Item::deserialize(deserializer)))
+            .map_while(|_| {
+                (0 != deserializer.bytes_in_bounds().expect("expected to be Some within deserialize_bounded"))
+                    .then(|| Item::deserialize(deserializer))
+            })
             .collect()
     })
 }

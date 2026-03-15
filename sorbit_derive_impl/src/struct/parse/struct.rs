@@ -145,6 +145,7 @@ mod tests {
             fields: vec![Field::Direct {
                 ident: parse_quote!(field),
                 ty: parse_quote!(u8),
+                multi_pass: None,
                 transform: Transform::None,
                 layout_properties: Default::default(),
             }],

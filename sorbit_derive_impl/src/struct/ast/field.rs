@@ -39,6 +39,7 @@ pub enum Field {
     Direct {
         member: Member,
         ty: Type,
+        multi_pass: Option<bool>,
         transform: Transform,
         layout_properties: FieldLayoutProperties,
     },
@@ -66,12 +67,12 @@ impl ToSerializeOp for Field {
 
     fn to_serialize_op(&self, region: &mut Region, (serializer, use_padding): (Value, bool)) -> Vec<Value> {
         match self {
-            Field::Direct { member, ty, transform, layout_properties, .. } => {
+            Field::Direct { member, ty, multi_pass, transform, layout_properties, .. } => {
                 let layout = &conditionally_padded_layout(layout_properties, use_padding);
                 let result = with_layout(region, serializer, true, layout, |region, serializer| {
                     let field = symref(region, member_to_ident(member.clone()));
                     let transformed = serialize_transform(region, serializer, field, ty, transform);
-                    serialize_object(region, serializer, transformed)
+                    serialize_object(region, serializer, transformed, multi_pass.unwrap_or(false))
                 });
                 vec![result]
             }
@@ -89,7 +90,7 @@ impl ToSerializeOp for Field {
                     }
 
                     let bit_field_ref = ref_(region, bit_field);
-                    serialize_object(region, serializer, bit_field_ref)
+                    serialize_object(region, serializer, bit_field_ref, false)
                 });
                 vec![result]
             }
@@ -201,6 +202,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: Default::default(),
         };
@@ -214,7 +216,7 @@ mod tests {
         let pattern = "
         {
             %foo = symref [foo]
-            %res = serialize_object %serializer, %foo
+            %res = serialize_object [false] %serializer, %foo
             yield %res
         }
         ";
@@ -226,6 +228,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
@@ -240,7 +243,7 @@ mod tests {
         {
             %res = byte_order[BigEndian, true] %serializer |%se_inner| {
                 %foo = symref [foo]
-                %res_inner = serialize_object %se_inner, %foo
+                %res_inner = serialize_object [false] %se_inner, %foo
                 yield %res_inner
             }
             yield %res
@@ -254,6 +257,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
@@ -279,7 +283,7 @@ mod tests {
             
             %res = serialize_composite %serializer |%s_inner| {
                 %foo = symref [foo]
-                %res_inner = serialize_object %s_inner, %foo
+                %res_inner = serialize_object [false] %s_inner, %foo
                 %round = align [3, true] %s_inner
                 %try_round = try %round
                 yield %res_inner
@@ -298,6 +302,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: Some(ByteOrder::BigEndian),
@@ -324,7 +329,7 @@ mod tests {
             %res = serialize_composite %serializer |%s_inner| {
                 %res_inner = byte_order[BigEndian, true] %s_inner |%se_bo| {
                     %foo = symref [foo]
-                    %res_bo = serialize_object %se_bo, %foo
+                    %res_bo = serialize_object [false] %se_bo, %foo
                     yield %res_bo
                 }
                 %round = align [3, true] %s_inner
@@ -345,6 +350,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: Default::default(),
         };
@@ -368,6 +374,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties { byte_order: Some(ByteOrder::BigEndian), ..Default::default() },
         };
@@ -395,6 +402,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: None,
@@ -435,6 +443,7 @@ mod tests {
         let input = Field::Direct {
             member: parse_quote!(foo),
             ty: parse_quote!(i32),
+            multi_pass: None,
             transform: Transform::None,
             layout_properties: FieldLayoutProperties {
                 byte_order: Some(ByteOrder::BigEndian),
@@ -520,7 +529,7 @@ mod tests {
         {
             %bf = empty_bit_field [u16]
             %ref_bf = ref %bf
-            %s = serialize_object %serializer %ref_bf
+            %s = serialize_object [false] %serializer %ref_bf
             yield %s
         }
         ";
@@ -550,7 +559,7 @@ mod tests {
             %bf2 = try %maybe_bf2
 
             %ref_bf2 = ref %bf2
-            %s = serialize_object %serializer %ref_bf2
+            %s = serialize_object [false] %serializer %ref_bf2
             yield %s
         }
         ";

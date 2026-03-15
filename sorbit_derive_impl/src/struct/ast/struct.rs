@@ -84,7 +84,9 @@ impl ToDeserializeOp for Struct {
 impl Struct {
     pub fn is_multi_pass(&self) -> bool {
         self.fields.iter().any(|field| match field {
-            Field::Direct { transform, .. } => matches!(transform, Transform::ByteCount(_)),
+            Field::Direct { transform, multi_pass, .. } => {
+                matches!(transform, Transform::ByteCount(_)) || *multi_pass == Some(true)
+            }
             Field::Bit { members, .. } => {
                 members.iter().any(|member| matches!(member.transform, Transform::ByteCount(_)))
             }
@@ -348,12 +350,14 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
                 Field::Direct {
                     member: parse_quote!(bar),
                     ty: parse_quote!(i8),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
@@ -371,10 +375,10 @@ mod tests {
                 destructure [Test, foo: foo, bar: bar] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
                     %foo = symref [foo]
-                    %maybe_span_foo = serialize_object %s_inner, %foo
+                    %maybe_span_foo = serialize_object [false] %s_inner, %foo
 
                     %bar = symref [bar]
-                    %maybe_span_bar = serialize_object %s_inner, %bar
+                    %maybe_span_bar = serialize_object [false] %s_inner, %bar
 
                     %span_foo = try %maybe_span_foo
                     %span_bar = try %maybe_span_bar

@@ -2,7 +2,7 @@ use sorbit::byte_order::ByteOrder;
 use sorbit::error::Error;
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Serializer, Span};
+use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Span};
 use sorbit::stream_ser_de::{StreamDeserializer, StreamSerializer};
 use sorbit::unpack_bit_field;
 

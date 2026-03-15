@@ -28,14 +28,6 @@ pub trait SerializationOutcome {
 /// Serializers can transform primitive types into a stream of bytes that can
 /// be sent over the network or stored in files.
 pub trait Serializer: SerializationOutcome {
-    /// The type of the serializer passed to the member serializer in
-    /// [`Serializer::serialize_composite`].
-    type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
-
-    /// The type of the serializer passed to the member serializer in
-    /// [`Serializer::with_byte_order`].
-    type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
-
     /// Serialize a [`bool`] value.
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;
 
@@ -108,7 +100,7 @@ pub trait Serializer: SerializationOutcome {
     /// A tuple of the [`Span`] of the entire composite and the output of `serialize_members`.
     fn serialize_composite<Output>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<(Self::Success, Output), Self::Error>;
 
     /// Temporarily change the byte order.
@@ -118,7 +110,7 @@ pub trait Serializer: SerializationOutcome {
     fn with_byte_order<Output>(
         &mut self,
         byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
 
     /// Return [`Ok`].
@@ -140,12 +132,11 @@ pub trait Serializer: SerializationOutcome {
 /// a [Span] that contains the location in the stream where the object was
 /// serialized. The span can later be used to analyze and update the stream.
 pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
-    /// The type of the serializer passed to the update function in
-    /// [`RevisableSerializer::update_section`].
-    type SectionSerializer: Serializer + RevisableSerializer<Success = Self::Success, Error = Self::Error>;
     /// The type of the stream passed to the analyzer function in
     /// [`RevisableSerializer::analyze_section`].
-    type SectionReader: Read + Seek;
+    type SectionReader<'me>: Read + Seek
+    where
+        Self: 'me;
 
     /// Analyze the byte stream of previously serialized items.
     ///
@@ -158,11 +149,13 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// This function can be used to compute checksums or to measure the final
     /// length of a data structure. These calculations cannot easily be done
     /// on the unserialized object as they require the raw bytes.
-    fn analyze_span<Output>(
+    fn analyze_span<Output, AnalyzeSpanFn>(
         &mut self,
         span: &Self::Success,
-        analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
-    ) -> Result<Output, Self::Error>;
+        analyze_span_fn: AnalyzeSpanFn,
+    ) -> Result<Output, Self::Error>
+    where
+        AnalyzeSpanFn: for<'analyze> FnOnce(Self::SectionReader<'analyze>) -> Output;
 
     /// Update the bytes belonging to a previously serialized item.
     ///
@@ -179,7 +172,7 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     fn revise_span<Output>(
         &mut self,
         span: &Self::Success,
-        serialize_span: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
+        serialize_span: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
 }
 
@@ -197,13 +190,6 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
 /// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
 /// also implement [`RevisableSerializer`] so that you can review and update the serialized
 /// byte stream.
-pub trait MultiPassSerializer:
-    Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer> + RevisableSerializer
-{
-}
+pub trait MultiPassSerializer: Serializer + RevisableSerializer {}
 
-impl<S> MultiPassSerializer for S where
-    S: Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer>
-        + RevisableSerializer
-{
-}
+impl<S> MultiPassSerializer for S where S: Serializer + RevisableSerializer {}

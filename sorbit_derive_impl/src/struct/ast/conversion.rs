@@ -100,21 +100,44 @@ pub fn to_layout_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Ve
 
     for (index, field) in fields.enumerate() {
         match field {
-            parse::Field::Direct { ident, ty, transform: value, layout_properties } => {
+            parse::Field::Direct { ident, ty, multi_pass, transform, layout_properties } => {
                 let member = to_member(ident, index, ty.span());
-                layout_fields.push(LayoutField::Direct { member, ty, transform: value, layout_properties });
+                layout_fields.push(LayoutField::Direct { member, ty, multi_pass, transform, layout_properties });
             }
-            parse::Field::Bit { ident, ty, transform, bits, storage_ident, storage_properties, layout_properties } => {
+            parse::Field::Bit {
+                ident,
+                ty,
+                multi_pass,
+                transform,
+                bits,
+                storage_ident,
+                storage_properties,
+                layout_properties,
+            } => {
                 let member = to_member(ident, index, ty.span());
                 match layout_fields.last_mut() {
                     Some(LayoutField::Bit { ident, sub_fields }) if *ident == storage_ident => {
-                        let sub_field =
-                            LayoutSubField { member, ty, transform, bits, storage_properties, layout_properties };
+                        let sub_field = LayoutSubField {
+                            member,
+                            ty,
+                            multi_pass,
+                            transform,
+                            bits,
+                            storage_properties,
+                            layout_properties,
+                        };
                         sub_fields.push(sub_field);
                     }
                     _ => {
-                        let sub_field =
-                            LayoutSubField { member, ty, transform, bits, storage_properties, layout_properties };
+                        let sub_field = LayoutSubField {
+                            member,
+                            ty,
+                            multi_pass,
+                            transform,
+                            bits,
+                            storage_properties,
+                            layout_properties,
+                        };
                         if layout_field_idents.insert(storage_ident.clone()) {
                             layout_fields.push(LayoutField::Bit { ident: storage_ident, sub_fields: vec![sub_field] });
                         } else {
@@ -133,14 +156,24 @@ pub fn to_layout_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Ve
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LayoutField {
-    Direct { member: Member, ty: Type, transform: Transform, layout_properties: FieldLayoutProperties },
-    Bit { ident: Ident, sub_fields: Vec<LayoutSubField> },
+    Direct {
+        member: Member,
+        ty: Type,
+        multi_pass: Option<bool>,
+        transform: Transform,
+        layout_properties: FieldLayoutProperties,
+    },
+    Bit {
+        ident: Ident,
+        sub_fields: Vec<LayoutSubField>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LayoutSubField {
     member: Member,
     ty: Type,
+    multi_pass: Option<bool>,
     transform: Transform,
     bits: Range<u8>,
     storage_properties: BitFieldStorageProperties,
@@ -150,8 +183,8 @@ pub struct LayoutSubField {
 impl LayoutField {
     pub fn into_field(self) -> Result<Field, syn::Error> {
         match self {
-            LayoutField::Direct { member, ty, transform, layout_properties } => {
-                Ok(Field::Direct { member, ty, transform, layout_properties })
+            LayoutField::Direct { member, ty, multi_pass, transform, layout_properties } => {
+                Ok(Field::Direct { member, ty, multi_pass, transform, layout_properties })
             }
             LayoutField::Bit { ident, sub_fields } => {
                 let ty = Self::find_storage_ty(sub_fields.iter(), ident.span())?;
@@ -243,6 +276,7 @@ mod tests {
             parse::Field::Direct {
                 ident: Some(parse_quote!(value)),
                 ty: parse_quote!(u8),
+                multi_pass: None,
                 transform,
                 layout_properties: Default::default(),
             }
@@ -252,6 +286,7 @@ mod tests {
             parse::Field::Direct {
                 ident: Some(parse_quote!(collection)),
                 ty: parse_quote!(u8),
+                multi_pass: None,
                 transform,
                 layout_properties: Default::default(),
             }
@@ -336,12 +371,14 @@ mod tests {
                 parse::Field::Direct {
                     ident: Some(parse_quote!(foo)),
                     ty: parse_quote!(u8),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
                 parse::Field::Bit {
                     ident: parse_quote!(bar),
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     bits: 0..4,
                     storage_ident: parse_quote!(_bit_field),
@@ -351,6 +388,7 @@ mod tests {
                 parse::Field::Direct {
                     ident: None,
                     ty: parse_quote!(u32),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
@@ -360,6 +398,7 @@ mod tests {
                 LayoutField::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
@@ -368,6 +407,7 @@ mod tests {
                     sub_fields: vec![LayoutSubField {
                         member: parse_quote!(bar),
                         ty: parse_quote!(f32),
+                        multi_pass: None,
                         transform: Transform::None,
                         bits: 0..4,
                         storage_properties: Default::default(),
@@ -377,6 +417,7 @@ mod tests {
                 LayoutField::Direct {
                     member: parse_quote!(2),
                     ty: parse_quote!(u32),
+                    multi_pass: None,
                     transform: Transform::None,
                     layout_properties: Default::default(),
                 },
@@ -390,6 +431,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_1),
                     bits: 0..4,
@@ -399,6 +441,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_1),
                     bits: 0..4,
@@ -408,6 +451,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_2),
                     bits: 0..4,
@@ -423,6 +467,7 @@ mod tests {
                         LayoutSubField {
                             member: parse_quote!(0),
                             ty: parse_quote!(f32),
+                            multi_pass: None,
                             transform: Transform::None,
                             bits: 0..4,
                             storage_properties: Default::default(),
@@ -431,6 +476,7 @@ mod tests {
                         LayoutSubField {
                             member: parse_quote!(1),
                             ty: parse_quote!(f32),
+                            multi_pass: None,
                             transform: Transform::None,
                             bits: 0..4,
                             storage_properties: Default::default(),
@@ -443,6 +489,7 @@ mod tests {
                     sub_fields: vec![LayoutSubField {
                         member: parse_quote!(2),
                         ty: parse_quote!(f32),
+                        multi_pass: None,
                         transform: Transform::None,
                         bits: 0..4,
                         storage_properties: Default::default(),
@@ -460,6 +507,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_1),
                     bits: 0..4,
@@ -469,6 +517,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_2),
                     bits: 0..4,
@@ -478,6 +527,7 @@ mod tests {
                 parse::Field::Bit {
                     ident: None,
                     ty: parse_quote!(f32),
+                    multi_pass: None,
                     transform: Transform::None,
                     storage_ident: parse_quote!(_bit_field_1),
                     bits: 0..4,
@@ -498,6 +548,7 @@ mod tests {
             std::array::from_fn(|index| LayoutSubField {
                 member: index.into(),
                 ty: parse_quote!(f32),
+                multi_pass: None,
                 transform: Transform::None,
                 bits: 0..4,
                 storage_properties: Default::default(),

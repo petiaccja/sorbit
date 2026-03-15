@@ -62,7 +62,7 @@ impl Enum {
                     Region::build(move |region, [serializer]| {
                         let discriminant = custom_expr(region, discriminant_cast);
                         let disc_ref = ref_(region, discriminant);
-                        let disc_result = serialize_object(region, serializer, disc_ref);
+                        let disc_result = serialize_object(region, serializer, disc_ref, false);
                         try_(region, disc_result);
                         let result = content.serialize_members(region, serializer);
                         vec![result]
@@ -74,7 +74,7 @@ impl Enum {
             } else {
                 let discriminant = custom_expr(region, discriminant_cast);
                 let disc_ref = ref_(region, discriminant);
-                vec![serialize_object(region, serializer, disc_ref)]
+                vec![serialize_object(region, serializer, disc_ref, false)]
             }
         });
         (pat, None, body)
@@ -94,7 +94,7 @@ impl Enum {
             let body = Region::build(move |region, []| {
                 let discriminant = custom_expr(region, value_expr);
                 let disc_ref = ref_(region, discriminant);
-                vec![serialize_object(region, serializer, disc_ref)]
+                vec![serialize_object(region, serializer, disc_ref, false)]
             });
             (pat, None, body)
         } else {
@@ -104,7 +104,7 @@ impl Enum {
             let body = Region::build(move |region, []| {
                 let discriminant = custom_expr(region, discriminant_cast);
                 let disc_ref = ref_(region, discriminant);
-                vec![serialize_object(region, serializer, disc_ref)]
+                vec![serialize_object(region, serializer, disc_ref, false)]
             });
             (pat, None, body)
         }
@@ -479,6 +479,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(0),
                             ty: parse_quote!(u8),
+                            multi_pass: None,
                             transform: Transform::None,
                             layout_properties: Default::default(),
                         }],
@@ -496,6 +497,7 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(b),
                             ty: parse_quote!(i8),
+                            multi_pass: None,
                             transform: Transform::None,
                             layout_properties: Default::default(),
                         }],
@@ -521,13 +523,13 @@ mod tests {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: B => {
                         %disc_b = custom_expr [(1) as u16]
                         %disc_b_ref = ref %disc_b
-                        %result_b = serialize_object %serializer, %disc_b_ref
+                        %result_b = serialize_object [false] %serializer, %disc_b_ref
                         yield %result_b
                     }
                 }
@@ -590,13 +592,13 @@ mod tests {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: CatchAll => {
                         %disc_b = custom_expr [(1) as u16]
                         %disc_b_ref = ref %disc_b
-                        %result_b = serialize_object %serializer, %disc_b_ref
+                        %result_b = serialize_object [false] %serializer, %disc_b_ref
                         yield %result_b
                     }
                 }
@@ -623,13 +625,13 @@ mod tests {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: CatchAll (value) => {
                         %disc_ca = custom_expr [value]
                         %disc_ca_ref = ref %disc_ca
-                        %result_ca = serialize_object %serializer, %disc_ca_ref
+                        %result_ca = serialize_object [false] %serializer, %disc_ca_ref
                         yield %result_ca
                     }
                 }
@@ -721,12 +723,12 @@ mod tests {
                         %result_comp_a = serialize_composite %serializer |%se_inner_a| {
                             %disc_a = custom_expr [(0) as u16]
                             %disc_a_ref = ref %disc_a
-                            %result_disc_a = serialize_object %se_inner_a, %disc_a_ref
+                            %result_disc_a = serialize_object [false] %se_inner_a, %disc_a_ref
                             %span_disc_a = try %result_disc_a
 
                             %result_cont_a = serialize_composite %se_inner_a |%se_cont_a| {
                                 %m0 = symref [m0]
-                                %maybe_span_m0 = serialize_object %se_cont_a, %m0
+                                %maybe_span_m0 = serialize_object [false] %se_cont_a, %m0
 
                                 %span_m0 = try %maybe_span_m0
                                 %spans_a = tuple %span_m0
@@ -747,12 +749,12 @@ mod tests {
                         %result_comp_b = serialize_composite %serializer |%se_inner_b| {
                             %disc_b = custom_expr [(1) as u16]
                             %disc_b_ref = ref %disc_b
-                            %result_disc_b = serialize_object %se_inner_b, %disc_b_ref
+                            %result_disc_b = serialize_object [false] %se_inner_b, %disc_b_ref
                             %span_disc_b = try %result_disc_b
 
                             %result_cont_b = serialize_composite %se_inner_b |%se_cont_b| {
                                 %b = symref [b]
-                                %maybe_span_b = serialize_object %se_cont_b, %b
+                                %maybe_span_b = serialize_object [false] %se_cont_b, %b
 
                                 %span_b = try %maybe_span_b
                                 %spans_b = tuple %span_b

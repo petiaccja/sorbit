@@ -4,8 +4,8 @@ use quote::{ToTokens, quote};
 use crate::attribute::ByteOrder;
 use crate::ir::op;
 use crate::ops::constants::{
-    BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, REVISABLE_SERIALIZER_TRAIT, SERIALIZE_TRAIT,
-    SERIALIZER_TRAIT,
+    BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, MULTI_PASS_SERIALIZE_TRAIT,
+    REVISABLE_SERIALIZER_TRAIT, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
 };
 
 //------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ op!(
     op: SerializeObjectOp,
     inputs: {serializer, object},
     outputs: {serialized_object},
-    attributes: {},
+    attributes: {multi_pass: bool},
     regions: {},
     terminator: false
 );
@@ -150,7 +150,11 @@ impl ToTokens for SerializeObjectOp {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let serializer = &self.serializer;
         let object = &self.object;
-        tokens.extend(quote! { #SERIALIZE_TRAIT::serialize(#object, #serializer) })
+        let serialize_trait = match self.multi_pass {
+            true => quote! { #MULTI_PASS_SERIALIZE_TRAIT },
+            false => quote! { #SERIALIZE_TRAIT },
+        };
+        tokens.extend(quote! { #serialize_trait::serialize(#object, #serializer) })
     }
 }
 

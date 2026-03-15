@@ -64,6 +64,10 @@ pub mod path {
         parse_quote!(sorbit)
     }
 
+    pub fn multi_pass() -> Path {
+        parse_quote!(multi_pass)
+    }
+
     pub fn value() -> Path {
         parse_quote!(value)
     }

@@ -8,4 +8,5 @@ mod field_layout;
 mod generics;
 mod struct_byte_order;
 mod struct_layout;
+mod struct_multi_pass;
 mod tuple_struct;
