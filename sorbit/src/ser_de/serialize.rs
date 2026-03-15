@@ -1,6 +1,4 @@
-use crate::ser_de::MultiPassSerializer;
-
-use super::Serializer;
+use crate::ser_de::{MultiPassSerializer, Serializer};
 
 /// The type can be serialized into a [`Serializer`].
 ///
