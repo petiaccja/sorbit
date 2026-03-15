@@ -1,7 +1,7 @@
 use crate::ir::op;
 use crate::ops::constants::{
-    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT,
-    SERIALIZER_TRAIT, SERIALIZER_TYPE,
+    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, MULTI_PASS_SERIALIZE_TRAIT, MULTI_PASS_SERIALIZER_TRAIT,
+    SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT, SERIALIZER_TRAIT, SERIALIZER_TYPE,
 };
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -16,7 +16,7 @@ op!(
     op: ImplSerializeOp,
     inputs: {},
     outputs: {},
-    attributes: {name: syn::Ident, generics: syn::Generics},
+    attributes: {name: syn::Ident, generics: syn::Generics, multi_pass: bool},
     regions: {body},
     terminator: false
 );
@@ -28,10 +28,20 @@ impl ToTokens for ImplSerializeOp {
         let body = &self.body;
         let serializer = body.arguments()[0];
 
+        let serialize_trait = match self.multi_pass {
+            false => quote! { #SERIALIZE_TRAIT },
+            true => quote! { #MULTI_PASS_SERIALIZE_TRAIT },
+        };
+
+        let serializer_trait = match self.multi_pass {
+            false => quote! { #SERIALIZER_TRAIT },
+            true => quote! { #MULTI_PASS_SERIALIZER_TRAIT },
+        };
+
         tokens.extend(quote! {
             #[automatically_derived]
-            impl #impl_generics #SERIALIZE_TRAIT for #name #ty_generics #where_clause{
-                fn serialize<#SERIALIZER_TYPE: #SERIALIZER_TRAIT>(
+            impl #impl_generics #serialize_trait for #name #ty_generics #where_clause{
+                fn serialize<#SERIALIZER_TYPE: #serializer_trait>(
                     &self,
                     #serializer: &mut #SERIALIZER_TYPE
                 ) -> ::core::result::Result<

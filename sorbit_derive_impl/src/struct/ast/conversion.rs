@@ -66,6 +66,34 @@ pub fn add_symmetric_transforms(mut fields: Vec<parse::Field>) -> Result<Vec<par
     Ok(fields)
 }
 
+pub fn check_transforms<'a>(fields: impl Iterator<Item = &'a Field>) -> Result<(), syn::Error> {
+    for field in fields {
+        match field {
+            Field::Direct { .. } => (),
+            Field::Bit { members, .. } => {
+                for member in members {
+                    match &member.transform {
+                        Transform::LengthBy(_) => {
+                            return Err(syn::Error::new(
+                                member.span(),
+                                "storing the length separately is not allowed for collections in a bit field",
+                            ));
+                        }
+                        Transform::ByteCountBy(_) => {
+                            return Err(syn::Error::new(
+                                member.span(),
+                                "storing the byte count separately is not allowed for collections in a bit field",
+                            ));
+                        }
+                        _ => (),
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 pub fn to_layout_fields(fields: impl Iterator<Item = parse::Field>) -> Result<Vec<LayoutField>, syn::Error> {
     let mut layout_fields = Vec::new();
     let mut layout_field_idents = HashSet::new();

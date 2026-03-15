@@ -212,6 +212,7 @@ impl ToSerializeOp for Enum {
             region,
             self.ident.clone(),
             self.generics.clone(),
+            self.is_multi_pass(),
             Region::build(|region, [serializer]| {
                 let result = with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
                     let self_ = self_(region);
@@ -275,6 +276,13 @@ fn mismatch_arm_deserialize(deserializer: Value) -> (syn::Pat, Option<Expr>, Reg
 }
 
 impl Enum {
+    pub fn is_multi_pass(&self) -> bool {
+        self.variants
+            .iter()
+            .filter_map(|variant| variant.content.as_ref())
+            .any(|content| content.is_multi_pass())
+    }
+
     pub fn to_pack_into_tokens(&self) -> TokenStream {
         let ident = &self.ident;
         let storage_ty = &self.storage_ty;
@@ -507,7 +515,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
@@ -576,7 +584,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
@@ -609,7 +617,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
@@ -706,7 +714,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A { 0 : m0 } => {

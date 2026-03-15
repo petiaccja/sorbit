@@ -220,7 +220,7 @@ impl<Stream: Read + Write + Seek> RevisableSerializer for StreamSerializer<Strea
     type SectionSerializer = StreamSerializer<StreamSection<Stream>>;
     type SectionReader = StreamSection<Stream>;
 
-    fn update_section<Output>(
+    fn revise_span<Output>(
         &mut self,
         section: &Self::Success,
         update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
@@ -235,7 +235,7 @@ impl<Stream: Read + Write + Seek> RevisableSerializer for StreamSerializer<Strea
                 return Err(ErrorKind::UnexpectedEof.into());
             }
         };
-        let mut section_serializer = StreamSerializer::new(partial_stream);
+        let mut section_serializer = StreamSerializer::new(partial_stream).set_byte_order(self.byte_order);
         let result = update_section(&mut section_serializer);
         {
             let Self::SectionSerializer { stream, byte_order: _, stream_pos: _, composite_base: _ } =
@@ -246,7 +246,7 @@ impl<Stream: Read + Write + Seek> RevisableSerializer for StreamSerializer<Strea
         result
     }
 
-    fn analyze_section<Output>(
+    fn analyze_span<Output>(
         &mut self,
         section: &Self::Success,
         analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
@@ -288,6 +288,8 @@ impl From<Section> for () {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use crate::{error::ErrorKind, io::GrowingMemoryStream};
 
     use super::*;
@@ -464,34 +466,9 @@ mod tests {
     }
 
     //--------------------------------------------------------------------------
-    // Composites
-    //--------------------------------------------------------------------------
-    #[test]
-    fn serialize_composite() -> Result<(), Error> {
-        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).big_endian();
-        s.serialize_u8(0xEE)?;
-        s.serialize_composite(|s| s.serialize_u16(0xAABB))?;
-        s.serialize_u8(0xFF)?;
-        assert_eq!(s.take().take(), vec![0xEE, 0xAA, 0xBB, 0xFF]);
-        Ok(())
-    }
-
-    //--------------------------------------------------------------------------
-    // Byte order
-    //--------------------------------------------------------------------------
-    #[test]
-    fn change_byte_order() -> Result<(), Error> {
-        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).big_endian();
-        s.serialize_u16(0xEEFF)?;
-        s.with_byte_order(ByteOrder::LittleEndian, |s| s.serialize_u16(0xAABB))?;
-        s.serialize_u16(0xFFEE)?;
-        assert_eq!(s.take().take(), vec![0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE]);
-        Ok(())
-    }
-
-    //--------------------------------------------------------------------------
     // Padding
     //--------------------------------------------------------------------------
+
     #[test]
     fn pad_top_level() -> Result<(), Error> {
         let mut s = StreamSerializer::new(GrowingMemoryStream::new()).big_endian();
@@ -545,6 +522,53 @@ mod tests {
         })?;
         s.serialize_bool(true)?;
         assert_eq!(s.take().take(), vec![0x01, 0x62, 0x85, 0x28, 0x75, 0x27, 0x00, 0x00, 0x00, 0x01]);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Composites
+    //--------------------------------------------------------------------------
+
+    #[rstest]
+    #[case(ByteOrder::LittleEndian, vec![0xEE, 0xBB, 0xAA, 0xFF])]
+    #[case(ByteOrder::BigEndian, vec![0xEE, 0xAA, 0xBB, 0xFF])]
+    fn serialize_composite(#[case] byte_order: ByteOrder, #[case] expected: Vec<u8>) -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).set_byte_order(byte_order);
+        s.serialize_u8(0xEE)?;
+        s.serialize_composite(|s| s.serialize_u16(0xAABB))?;
+        s.serialize_u8(0xFF)?;
+        assert_eq!(s.take().take(), expected);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Byte order
+    //--------------------------------------------------------------------------
+
+    #[rstest]
+    #[case(ByteOrder::LittleEndian, vec![0xEE, 0xFF, 0xBB, 0xAA, 0xFF, 0xEE])]
+    #[case(ByteOrder::BigEndian, vec![0xEE, 0xFF, 0xAA, 0xBB, 0xFF, 0xEE])]
+    fn change_byte_order(#[case] byte_order: ByteOrder, #[case] expected: Vec<u8>) -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).big_endian();
+        s.serialize_u16(0xEEFF)?;
+        s.with_byte_order(byte_order, |s| s.serialize_u16(0xAABB))?;
+        s.serialize_u16(0xFFEE)?;
+        assert_eq!(s.take().take(), expected);
+        Ok(())
+    }
+
+    //--------------------------------------------------------------------------
+    // Revise span
+    //--------------------------------------------------------------------------
+
+    #[rstest]
+    #[case(ByteOrder::LittleEndian, vec![0xBB, 0xAA])]
+    #[case(ByteOrder::BigEndian, vec![ 0xAA, 0xBB])]
+    fn revise_span(#[case] byte_order: ByteOrder, #[case] expected: Vec<u8>) -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).set_byte_order(byte_order);
+        let span = s.serialize_u16(0x0000)?;
+        s.revise_span(&span, |s| s.serialize_u16(0xAABB))?;
+        assert_eq!(s.take().take(), expected);
         Ok(())
     }
 }

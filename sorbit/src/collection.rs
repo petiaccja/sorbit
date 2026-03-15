@@ -1,24 +1,44 @@
 //! Utilities for serializing collections, like `Vec`.
 
-use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer, Span};
 
 /// Return the length of a collection as a specific (integer) type.
 ///
 /// If the length of the collection can not be converted into the requested type
 /// without losing precision, an error is returned.
-pub fn len<'collection, Len, S, Collection>(
-    serializer: &mut S,
+pub fn len<'collection, Len, SerializerTy, Collection>(
+    serializer: &mut SerializerTy,
     collection: &'collection Collection,
-) -> Result<Len, S::Error>
+) -> Result<Len, SerializerTy::Error>
 where
     Len: TryFrom<usize>,
-    S: Serializer,
+    SerializerTy: Serializer,
     &'collection Collection: IntoIterator<IntoIter: ExactSizeIterator>,
 {
     if let Ok(len) = Len::try_from(collection.into_iter().len()) {
         Ok(len)
     } else {
         serializer.error("the length of the collection is too large for its binary representation")
+    }
+}
+
+/// Return the number of bytes an object occupies as serialized.
+///
+/// If the number of bytes cannot be converted into the requested type without
+/// losing precision, an error is returned.
+pub fn byte_count<ByteCount, SerializerTy, SpanTy>(
+    serializer: &mut SerializerTy,
+    span: &SpanTy,
+) -> Result<ByteCount, SerializerTy::Error>
+where
+    ByteCount: TryFrom<u64>,
+    SerializerTy: Serializer,
+    SpanTy: Span,
+{
+    if let Ok(len) = ByteCount::try_from(span.len()) {
+        Ok(len)
+    } else {
+        serializer.error("the byte count of the collection is too large for its binary representation")
     }
 }
 

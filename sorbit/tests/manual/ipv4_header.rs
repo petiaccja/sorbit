@@ -67,16 +67,15 @@ impl MultiPassSerialize for IPv4Header {
         // Update IHL.
         {
             let ihl = Self::ihl(&self_span);
-            serializer.update_section(&b1_span, |s| {
+            serializer.revise_span(&b1_span, |s| {
                 pack_bit_field!(u8 => {(self.version, 4..8), (ihl, 0..4)}).unwrap().serialize(s)
             })?;
         }
         // Update checksum.
         {
-            let checksum = serializer.analyze_section(&self_span, |reader| Self::checksum(reader))?;
-            serializer.update_section(&checksum_span, |s| {
-                s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
-            })?;
+            let checksum = serializer.analyze_span(&self_span, |reader| Self::checksum(reader))?;
+            serializer
+                .revise_span(&checksum_span, |s| s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s)))?;
         }
         Ok(self_span)
     }

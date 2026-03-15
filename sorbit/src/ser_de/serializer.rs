@@ -158,9 +158,9 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// This function can be used to compute checksums or to measure the final
     /// length of a data structure. These calculations cannot easily be done
     /// on the unserialized object as they require the raw bytes.
-    fn analyze_section<Output>(
+    fn analyze_span<Output>(
         &mut self,
-        section: &Self::Success,
+        span: &Self::Success,
         analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
     ) -> Result<Output, Self::Error>;
 
@@ -176,10 +176,10 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
     /// lengths can be computed by [`RevisableSerializer::analyze_section`].
-    fn update_section<Output>(
+    fn revise_span<Output>(
         &mut self,
-        section: &Self::Success,
-        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
+        span: &Self::Success,
+        serialize_span: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
 }
 

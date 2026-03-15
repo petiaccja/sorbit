@@ -1,6 +1,8 @@
 use std::ops::Range;
 
+use proc_macro2::Span;
 use syn::parse_quote;
+use syn::spanned::Spanned;
 use syn::{Ident, Member, Type};
 
 use crate::attribute::BitNumbering;
@@ -15,6 +17,23 @@ use crate::ops::{
 };
 use crate::r#struct::parse::FieldLayoutProperties;
 use crate::utility::member_to_ident;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BitFieldMember {
+    pub member: Member,
+    pub ty: Type,
+    pub transform: Transform,
+    pub bits: Range<u8>,
+}
+
+impl BitFieldMember {
+    pub fn span(&self) -> Span {
+        match &self.member {
+            Member::Named(ident) => ident.span(),
+            Member::Unnamed(_) => self.ty.span(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Field {
@@ -34,14 +53,6 @@ pub enum Field {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BitFieldMember {
-    pub member: Member,
-    pub ty: Type,
-    pub transform: Transform,
-    pub bits: Range<u8>,
-}
-
 impl Field {
     pub fn members(&self) -> Vec<&Member> {
         match self {
@@ -52,12 +63,13 @@ impl Field {
 }
 
 impl ToSerializeOp for Field {
-    type Args = Value;
+    type Args = (Value, bool);
 
-    fn to_serialize_op(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
+    fn to_serialize_op(&self, region: &mut Region, (serializer, use_padding): (Value, bool)) -> Vec<Value> {
         match self {
             Field::Direct { member, ty, transform, layout_properties, .. } => {
-                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
+                let layout = &conditionally_padded_layout(layout_properties, use_padding);
+                let result = with_layout(region, serializer, true, layout, |region, serializer| {
                     let field = symref(region, member_to_ident(member.clone()));
                     let transformed = serialize_transform(region, serializer, field, ty, transform);
                     serialize_object(region, serializer, transformed)
@@ -65,18 +77,19 @@ impl ToSerializeOp for Field {
                 vec![result]
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
-                let mut bit_field = empty_bit_field(region, ty.clone());
+                let layout = &conditionally_padded_layout(layout_properties, use_padding);
+                let result = with_layout(region, serializer, true, layout, |region, serializer| {
+                    let mut bit_field = empty_bit_field(region, ty.clone());
 
-                for BitFieldMember { member, ty, transform, bits, .. } in members {
-                    let field = symref(region, member_to_ident(member.clone()));
-                    let transformed = serialize_transform(region, serializer, field, ty, transform);
-                    let result_new_bit_field =
-                        pack_bit_field(region, transformed, bit_field, bits.clone(), *bit_numbering);
-                    bit_field = try_(region, result_new_bit_field);
-                }
+                    for BitFieldMember { member, ty, transform, bits, .. } in members {
+                        let field = symref(region, member_to_ident(member.clone()));
+                        let transformed = serialize_transform(region, serializer, field, ty, transform);
+                        let result_new_bit_field =
+                            pack_bit_field(region, transformed, bit_field, bits.clone(), *bit_numbering);
+                        bit_field = try_(region, result_new_bit_field);
+                    }
 
-                let bit_field_ref = ref_(region, bit_field);
-                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
+                    let bit_field_ref = ref_(region, bit_field);
                     serialize_object(region, serializer, bit_field_ref)
                 });
                 vec![result]
@@ -134,6 +147,13 @@ fn with_layout(
     with_field_layout(region, serializer, is_serializing, *byte_order, *offset, *align, *round, body)
 }
 
+fn conditionally_padded_layout(layout: &FieldLayoutProperties, use_padding: bool) -> FieldLayoutProperties {
+    match use_padding {
+        false => FieldLayoutProperties { byte_order: layout.byte_order, ..Default::default() },
+        true => layout.clone(),
+    }
+}
+
 pub fn serialize_transform(
     region: &mut Region,
     serializer: Value,
@@ -185,7 +205,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
@@ -210,7 +230,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
@@ -243,7 +263,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
@@ -287,7 +307,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
@@ -490,7 +510,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 
@@ -511,7 +531,7 @@ mod tests {
 
         let serializer = Value::new();
         let mut region = Region::new(0);
-        let results = input.to_serialize_op(&mut region, serializer);
+        let results = input.to_serialize_op(&mut region, (serializer, true));
         yield_(&mut region, results);
         let op = format!("{:#}", region);
 

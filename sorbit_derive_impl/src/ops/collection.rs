@@ -7,7 +7,7 @@ op!(
     builder: len,
     op: LenOp,
     inputs: {serializer, collection},
-    outputs: {len_value},
+    outputs: {len},
     attributes: {len_ty: syn::Type},
     regions: {},
     terminator: false
@@ -19,6 +19,26 @@ impl ToTokens for LenOp {
         let collection = &self.collection;
         let len_ty = &self.len_ty;
         tokens.extend(quote! { ::sorbit::collection::len::<#len_ty, _, _>(#serializer, #collection) })
+    }
+}
+
+op!(
+    name: "byte_count",
+    builder: byte_count,
+    op: ByteCountOp,
+    inputs: {serializer, span},
+    outputs: {byte_count},
+    attributes: {byte_count_ty: syn::Type},
+    regions: {},
+    terminator: false
+);
+
+impl ToTokens for ByteCountOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let serializer = &self.serializer;
+        let collection = &self.span;
+        let byte_count_ty = &self.byte_count_ty;
+        tokens.extend(quote! { ::sorbit::collection::byte_count::<#byte_count_ty, _, _>(#serializer, #collection) })
     }
 }
 

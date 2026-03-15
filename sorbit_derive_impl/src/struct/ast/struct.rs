@@ -1,13 +1,15 @@
+use std::collections::{HashMap, HashSet};
+
 use syn::{Generics, Ident, Member};
 
-use crate::attribute::ByteOrder;
+use crate::attribute::{ByteOrder, Transform};
 use crate::ir::{Region, Value};
 use crate::ops::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ops::{
-    deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, self_, serialize_composite,
-    struct_, success, sym, try_, tuple,
+    self, deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, revise_span, self_,
+    serialize_composite, struct_, success, sym, try_, tuple,
 };
-use crate::r#struct::ast::conversion::add_symmetric_transforms;
+use crate::r#struct::ast::conversion::{add_symmetric_transforms, check_transforms};
 use crate::r#struct::ast::field::BitFieldMember;
 use crate::utility::{ident_to_type, member_to_ident};
 
@@ -35,6 +37,7 @@ impl TryFrom<parse::Struct> for Struct {
             .into_iter()
             .map(|field_group| field_group.into_field())
             .collect::<Result<Vec<_>, _>>()?;
+        check_transforms(fields.iter())?;
         Ok(Self {
             ident: value.ident,
             generics: value.generics,
@@ -54,6 +57,7 @@ impl ToSerializeOp for Struct {
             region,
             self.ident.clone(),
             self.generics.clone(),
+            self.is_multi_pass(),
             Region::build(|region, [serializer]| {
                 self.destructure(region);
                 vec![self.serialize_members(region, serializer)]
@@ -78,9 +82,18 @@ impl ToDeserializeOp for Struct {
 }
 
 impl Struct {
+    pub fn is_multi_pass(&self) -> bool {
+        self.fields.iter().any(|field| match field {
+            Field::Direct { transform, .. } => matches!(transform, Transform::ByteCount(_)),
+            Field::Bit { members, .. } => {
+                members.iter().any(|member| matches!(member.transform, Transform::ByteCount(_)))
+            }
+        })
+    }
+
     pub fn serialize_members(&self, region: &mut Region, serializer: Value) -> Value {
         with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
-            let maybe_composite = serialize_composite(
+            let composite_result = serialize_composite(
                 region,
                 serializer,
                 Region::build(|region, [serializer]| {
@@ -93,7 +106,7 @@ impl Struct {
                         let maybe_spans: Vec<_> = self
                             .fields
                             .iter()
-                            .map(|field| field.to_serialize_op(region, serializer))
+                            .map(|field| field.to_serialize_op(region, (serializer, true)))
                             .flatten()
                             .collect();
                         let spans: Vec<_> =
@@ -106,9 +119,73 @@ impl Struct {
                     }
                 }),
             );
-            let composite = try_(region, maybe_composite);
-            let span = member(region, composite, syn::Member::Unnamed(syn::Index::from(0)), false);
-            ok(region, span)
+            let composite = try_(region, composite_result);
+            let composite_span = member(region, composite, syn::Member::from(0), false);
+
+            // Update byte count fields.
+            let revise_byte_count: Vec<_> = self
+                .fields
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, field)| match field {
+                    Field::Direct { transform: Transform::ByteCountBy(byte_count), .. } => Some((byte_count, idx)),
+                    _ => None,
+                })
+                .collect();
+
+            if !revise_byte_count.is_empty() {
+                let field_spans = member(region, composite, syn::Member::from(1), false);
+
+                let mut field_tys = HashMap::new();
+                self.fields.iter().for_each(|field| match field {
+                    Field::Direct { member, ty, .. } => {
+                        let _ = field_tys.insert(member, ty);
+                    }
+                    Field::Bit { members, .. } => members.iter().for_each(|member| {
+                        let _ = field_tys.insert(&member.member, &member.ty);
+                    }),
+                });
+
+                let mut field_storages = HashMap::new();
+                self.fields.iter().enumerate().for_each(|(index, field)| match field {
+                    Field::Direct { member, .. } => {
+                        let _ = field_storages.insert(member, index);
+                    }
+                    Field::Bit { members, .. } => members.iter().for_each(|member| {
+                        let _ = field_storages.insert(&member.member, index);
+                    }),
+                });
+
+                for (byte_count, of_idx) in &revise_byte_count {
+                    let byte_count_ty = field_tys[byte_count];
+                    let field_span = ops::member(region, field_spans, syn::Member::from(*of_idx), true);
+                    let result_byte_count = ops::byte_count(region, serializer, field_span, byte_count_ty.clone());
+                    let byte_count_val = try_(region, result_byte_count);
+                    sym(region, byte_count_val, member_to_ident((*byte_count).clone()));
+                }
+
+                let reserialize_storages: HashSet<_> =
+                    revise_byte_count.iter().map(|(byte_count, _)| field_storages[byte_count]).collect();
+
+                for field_idx in reserialize_storages {
+                    let field = &self.fields[field_idx];
+                    let span = member(region, field_spans, syn::Member::from(field_idx), true);
+                    revise_span(
+                        region,
+                        serializer,
+                        span,
+                        Region::build(|region, [serializer]| {
+                            let results = field.to_serialize_op(region, (serializer, false));
+                            for result in results {
+                                try_(region, result);
+                            }
+                            vec![success(region, serializer)]
+                        }),
+                    );
+                }
+            }
+
+            ok(region, composite_span)
         })
     }
 
@@ -204,7 +281,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test, < 'x T : Clone > ] |%serializer| {
+            impl_serialize [ Test, < 'x T : Clone >, false ] |%serializer| {
                 %self = self
                 destructure [ Test ] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
@@ -238,7 +315,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 destructure [ Test ] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
@@ -289,7 +366,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 destructure [Test, foo: foo, bar: bar] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {

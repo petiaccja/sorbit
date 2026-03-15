@@ -4,7 +4,8 @@ use quote::{ToTokens, quote};
 use crate::attribute::ByteOrder;
 use crate::ir::op;
 use crate::ops::constants::{
-    BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, SERIALIZE_TRAIT, SERIALIZER_TRAIT,
+    BIG_ENDIAN, DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, LITTLE_ENDIAN, REVISABLE_SERIALIZER_TRAIT, SERIALIZE_TRAIT,
+    SERIALIZER_TRAIT,
 };
 
 //------------------------------------------------------------------------------
@@ -233,7 +234,7 @@ impl ToTokens for DeserializeCompositeOp {
 }
 
 //------------------------------------------------------------------------------
-// Deserialize byte order
+// Serialize/deserialize with byte order
 //------------------------------------------------------------------------------
 
 op!(
@@ -241,7 +242,7 @@ op!(
     builder: byte_order,
     op: ByteOrderOp,
     inputs: {serializer},
-    outputs: {ordered_result},
+    outputs: {result},
     attributes: {byte_order: ByteOrder, is_serializing: bool},
     regions: {body},
     terminator: false
@@ -269,5 +270,34 @@ impl ToTokens for ByteOrderOp {
                 })
             }),
         }
+    }
+}
+
+//------------------------------------------------------------------------------
+// Serialize/deserialize with byte order
+//------------------------------------------------------------------------------
+
+op!(
+    name: "revise_span",
+    builder: revise_span,
+    op: ReviseSpanOp,
+    inputs: {serializer, span},
+    outputs: {result},
+    attributes: {},
+    regions: {body},
+    terminator: false
+);
+
+impl ToTokens for ReviseSpanOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let serializer = &self.serializer;
+        let span = &self.span;
+        let body = &self.body;
+        let se_inner = body.arguments()[0];
+        tokens.extend(quote! {
+            #REVISABLE_SERIALIZER_TRAIT::revise_span(#serializer, #span, |#se_inner| {
+                #body
+            })
+        })
     }
 }
