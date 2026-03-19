@@ -1,7 +1,7 @@
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
 use crate::error::TraceError;
-use crate::io::{Read, Seek};
+use crate::io::Read;
 
 /// The section of the byte stream where a serialized object resides.
 ///
@@ -132,12 +132,6 @@ pub trait Serializer: SerializationOutcome {
 /// a [Span] that contains the location in the stream where the object was
 /// serialized. The span can later be used to analyze and update the stream.
 pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
-    /// The type of the stream passed to the analyzer function in
-    /// [`RevisableSerializer::analyze_section`].
-    type SectionReader<'me>: Read + Seek
-    where
-        Self: 'me;
-
     /// Analyze the byte stream of previously serialized items.
     ///
     /// Parameters:
@@ -155,7 +149,7 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
         analyze_span_fn: AnalyzeSpanFn,
     ) -> Result<Output, Self::Error>
     where
-        AnalyzeSpanFn: for<'analyze> FnOnce(Self::SectionReader<'analyze>) -> Output;
+        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Output;
 
     /// Update the bytes belonging to a previously serialized item.
     ///
@@ -168,7 +162,7 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     ///
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
-    /// lengths can be computed by [`RevisableSerializer::analyze_section`].
+    /// lengths can be computed by [`Self::analyze_span`].
     fn revise_span<Output>(
         &mut self,
         span: &Self::Success,

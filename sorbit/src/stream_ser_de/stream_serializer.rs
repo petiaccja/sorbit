@@ -34,8 +34,8 @@ macro_rules! to_xe_bytes {
 impl<Stream: Write> StreamSerializer<Stream> {
     /// Create a new serializer.
     ///
-    /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
-    /// [`Self::little_endian`] functions to set a specific byte order:
+    /// The default byte order is native byte order. Use the
+    /// [`Self::change_byte_order`] to set a specific byte order:
     /// ```
     /// # use sorbit::stream_ser_de::StreamSerializer;
     /// # use sorbit::io::GrowingMemoryStream;
@@ -172,13 +172,8 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
 
 impl<Stream> RevisableSerializer for StreamSerializer<Stream>
 where
-    Stream: Read + Write + Seek + 'static,
+    Stream: Read + Write + Seek,
 {
-    type SectionReader<'me>
-        = StreamSection<&'me mut Stream>
-    where
-        Self: 'me;
-
     fn revise_span<Output>(
         &mut self,
         span: &Self::Success,
@@ -196,13 +191,13 @@ where
         analyze_span_fn: AnalyzeSpanFn,
     ) -> Result<Output, Self::Error>
     where
-        AnalyzeSpanFn: for<'analyze> FnOnce(Self::SectionReader<'analyze>) -> Output,
+        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Output,
     {
         let range = &section.0;
         let stream_pos = self.stream.stream_position()?;
-        let partial_stream =
+        let mut partial_stream =
             StreamSection::new(&mut self.stream, range.clone()).map_err(|_| ErrorKind::UnexpectedEof)?;
-        let result = analyze_span_fn(partial_stream);
+        let result = analyze_span_fn(&mut partial_stream);
         self.stream.seek(SeekFrom::Start(stream_pos))?;
         Ok(result)
     }

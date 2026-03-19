@@ -1,5 +1,8 @@
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
+
 use crate::error::Error;
-use crate::io::{FixedMemoryStream, GrowingMemoryStream};
+use crate::io::FixedMemoryStream;
 use crate::ser_de::{Deserialize, MultiPassSerialize, Serialize};
 use crate::stream_ser_de::{StreamDeserializer, StreamSerializer};
 
@@ -12,17 +15,29 @@ use crate::stream_ser_de::{StreamDeserializer, StreamSerializer};
 /// or [MultiPassSerialize].
 pub trait ToBytes<const MULTI_PASS: bool> {
     /// Serialize the value into a blob of bytes.
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> Result<Vec<u8>, Error>;
+    /// Serialize the value into a blob of bytes.
+    fn to_byte_slice(&self, bytes: &mut [u8]) -> Result<(), Error>;
 }
 
 impl<T> ToBytes<false> for T
 where
     T: Serialize,
 {
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        use crate::io::GrowingMemoryStream;
+        use crate::stream_ser_de::StreamSerializer;
+
         let mut serializer = StreamSerializer::new(GrowingMemoryStream::new());
         self.serialize(&mut serializer)?;
         Ok(serializer.take().take())
+    }
+
+    fn to_byte_slice(&self, bytes: &mut [u8]) -> Result<(), Error> {
+        let mut serializer = StreamSerializer::new(FixedMemoryStream::new(bytes));
+        self.serialize(&mut serializer).map(|_| ())
     }
 }
 
@@ -30,10 +45,19 @@ impl<T> ToBytes<true> for T
 where
     T: MultiPassSerialize,
 {
+    #[cfg(feature = "alloc")]
     fn to_bytes(&self) -> Result<Vec<u8>, Error> {
+        use crate::io::GrowingMemoryStream;
+        use crate::stream_ser_de::StreamSerializer;
+
         let mut serializer = StreamSerializer::new(GrowingMemoryStream::new());
         self.serialize(&mut serializer)?;
         Ok(serializer.take().take())
+    }
+
+    fn to_byte_slice(&self, bytes: &mut [u8]) -> Result<(), Error> {
+        let mut serializer = StreamSerializer::new(FixedMemoryStream::new(bytes));
+        self.serialize(&mut serializer).map(|_| ())
     }
 }
 

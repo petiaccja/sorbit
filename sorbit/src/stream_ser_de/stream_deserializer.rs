@@ -27,8 +27,8 @@ macro_rules! from_xe_bytes {
 impl<Stream: Read> StreamDeserializer<Stream> {
     /// Create a new deserializer.
     ///
-    /// The default byte order is **big endian**. Use the [`Self::big_endian`] and
-    /// [`Self::little_endian`] functions to set a specific byte order:
+    /// The default byte order is native byte order. Use the
+    /// [`Self::change_byte_order`] to set a specific byte order:
     /// ```
     /// # use sorbit::stream_ser_de::StreamDeserializer;
     /// # use sorbit::io::GrowingMemoryStream;
