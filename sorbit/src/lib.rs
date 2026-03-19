@@ -51,6 +51,11 @@
 //!     inquiry.serialize(&mut serializer)?;
 //!     Ok(buffer.into())
 //! }
+//!
+//! fn to_bytes_simpler(inquiry: &Inquiry) -> Result<Vec<u8>, Error> {
+//!     use sorbit::ser_de::ToBytes;
+//!     inquiry.to_bytes()
+//! }
 //! ```
 //!
 //! ## Design
@@ -109,7 +114,7 @@
 //! like checksums, are calculated after the object has been serialized. To solve
 //! this issue, sorbit also provides the [ser_de::MultiPassSerialize] and
 //! [ser_de::MultiPassSerializer] traits. With these traits, it's possible to
-//! look back at the previously serialized data, makes calculations, and update
+//! look back at the previously serialized data, make calculations, and update
 //! parts of or all of the previously written bytes.
 //!
 //! ## Deriving serialization with macros and attributes
@@ -152,6 +157,28 @@
 //!     #[sorbit(bits=4..=6)]
 //!     member_two: u8,
 //! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! struct CollectionByLen {
+//!     #[sorbit(value=len(items))]
+//!     len: u8,
+//!     #[sorbit(value=len_by(len))]
+//!     items: Vec<u8>,
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! struct CollectionByByteCount {
+//!     #[sorbit(value=byte_count(items))]
+//!     byte_count: u8,
+//!     #[sorbit(value=byte_count_by(byte_count))]
+//!     items: Vec<u8>,
+//! }
+//!
+//! #[derive(Serialize, Deserialize)]
+//! struct MultiPassField {
+//!     #[sorbit(multi_pass)]
+//!     field: CollectionByByteCount,
+//! }
 //! ```
 //!
 //! #### The structure itself
@@ -170,6 +197,17 @@
 //! | `offset`      | Any positive integer          | The offset from the beginning of the structure where this field begins. An error is raised during serialization if the offset is already occupied. |
 //! | `align`       | Any positive integer          | The offset from the beginning of the structure will be a multiple of `align`. Zero padding is applied before the field, as necessary. |
 //! | `round`       | Any positive integer          | The field's length is zero-padded to be a multiple of this value. |
+//! | `value`       | Expression (see below)        | Ignore the field's value, and use the value provided by the expression. |
+//! | `multi_pass`  | None, true, false             | A marker attribute to tell sorbit that the field only implements [`MultiPassSerialize`](crate::ser_de::MultiPassSerialize), but not [`Serialize`](crate::ser_de::Serialize). Apply it only when necessary. This marker *is* indeed superfluous, but proc macros cannot look into the type system, and generic programming is not quite there yet. |
+//!
+//! Value expressions:
+//!
+//! | Expression               | Description |
+//! |--------------------------|-------------|
+//! | `value=len(c)`           | The serialized value will be the length of `self.c`, calculated as `(&self.c).into_iterator().len()`. This implies that `&self.c` supports [`IntoIterator`] and the iterator is an [`ExactSizeIterator`]. During deserialization, `self.c` will contain the number of items as per this field. Deserialization requires `self.c` to implement [`FromIterator`]. |
+//! | `value=len_by(l)`        | The length of this collection is serialized as `self.l`. This is the sibling attribute of `value=len(c)`, and it's enough if you specify only one of them. |
+//! | `value=byte_count(c)`    | The serialized value will be the number of bytes the serialized items of `self.c` occupy altogether. For deserialization, `self.c` has to implement [`FromIterator`]. Using this attribute will make the structure only [`MultiPassSerialize`](crate::ser_de::MultiPassSerialize). |
+//! | `value=byte_count_by(b)` | The number of bytes the serialized items of this field occupy together is serialized as `self.b`. This is the sibling attribute of `value=byte_count(c)`, and it's enough if you specify only one of them. |
 //!
 //! #### Bit fields
 //!
