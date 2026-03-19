@@ -22,7 +22,7 @@
 //! ```
 //! use sorbit::{Deserialize, Serialize};
 //! use sorbit::io::FixedMemoryStream;
-//! use sorbit::ser_de::{Serialize, SerializationOutcome};
+//! use sorbit::ser_de::{Serialize, Serializer};
 //! use sorbit::stream_ser_de::StreamSerializer;
 //!
 //! #[derive(Serialize, Deserialize)]
@@ -42,7 +42,7 @@
 //!     // Subsequent fields omitted for simplicity.
 //! }
 //!
-//! type Error = <StreamSerializer<FixedMemoryStream<[u8; 36]>> as SerializationOutcome>::Error;
+//! type Error = <StreamSerializer<FixedMemoryStream<[u8; 36]>> as Serializer>::Error;
 //!
 //! fn to_bytes(inquiry: &Inquiry) -> Result<Vec<u8>, Error> {
 //!     let mut buffer = [0u8; 36];
@@ -113,7 +113,7 @@
 //! looking back at the bytes written. This works for most cases, but some items,
 //! like checksums, are calculated after the object has been serialized. To solve
 //! this issue, sorbit also provides the [ser_de::MultiPassSerialize] and
-//! [ser_de::MultiPassSerializer] traits. With these traits, it's possible to
+//! [ser_de::RevisableSerializer] traits. With these traits, it's possible to
 //! look back at the previously serialized data, make calculations, and update
 //! parts of or all of the previously written bytes.
 //!

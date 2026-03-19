@@ -2,7 +2,7 @@ use sorbit::byte_order::ByteOrder;
 use sorbit::error::{Error, ErrorKind, MessageError as _};
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Span};
+use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, RevisableSerializer, Serialize, Span};
 use sorbit::stream_ser_de::{StreamDeserializer, StreamSerializer};
 use sorbit::unpack_bit_field;
 
@@ -47,7 +47,7 @@ impl IPv4Header {
 }
 
 impl MultiPassSerialize for IPv4Header {
-    fn serialize<S: MultiPassSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+    fn serialize<S: RevisableSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
         let (self_span, (b1_span, checksum_span)) = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 let b1_span = 0u8.serialize(s)?; // Version and IHL.

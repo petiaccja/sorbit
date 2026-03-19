@@ -16,18 +16,14 @@ pub trait Span {
     fn end(&self) -> u64;
 }
 
-/// A helper trait to define the types a [`Serializer`] returns on success
-/// and error.
-pub trait SerializationOutcome {
+/// Serializers can transform primitive types into a stream of bytes that can
+/// be sent over the network or stored in files.
+pub trait Serializer {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
     type Error: TraceError + MessageError + From<BitError>;
-}
 
-/// Serializers can transform primitive types into a stream of bytes that can
-/// be sent over the network or stored in files.
-pub trait Serializer: SerializationOutcome {
     /// Serialize a [`bool`] value.
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;
 
@@ -131,7 +127,7 @@ pub trait Serializer: SerializationOutcome {
 /// When serializing an object succeeds, revisable serializers always return
 /// a [Span] that contains the location in the stream where the object was
 /// serialized. The span can later be used to analyze and update the stream.
-pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
+pub trait RevisableSerializer: Serializer<Success: Span> {
     /// Analyze the byte stream of previously serialized items.
     ///
     /// Parameters:
@@ -170,21 +166,3 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
         serialize_span: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
 }
-
-/// A multi-pass serializer is a special [`Serializer`] that can look back at the
-/// previously serialized bytes and change them.
-///
-/// Some types cannot be serialized in a single pass. Think about the IHL and
-/// the checksum fields in the IPv4 header. In the first pass, you need to
-/// serialize the header with IHL and checksum set to zero. In the second pass,
-/// you need to look back at the entire serialized header to determine its length
-/// in bytes, and reserialize the IHL accordingly. After this, a third pass is
-/// needed, looking back at the entire byte span of the serialized header to
-/// calculate the checksum, and then the checksum needs to be reserialized.
-///
-/// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
-/// also implement [`RevisableSerializer`] so that you can review and update the serialized
-/// byte stream.
-pub trait MultiPassSerializer: Serializer + RevisableSerializer {}
-
-impl<S> MultiPassSerializer for S where S: Serializer + RevisableSerializer {}

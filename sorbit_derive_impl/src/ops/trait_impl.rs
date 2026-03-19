@@ -1,7 +1,7 @@
 use crate::ir::op;
 use crate::ops::constants::{
-    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, MULTI_PASS_SERIALIZE_TRAIT, MULTI_PASS_SERIALIZER_TRAIT,
-    SERIALIZATION_OUTCOME_TRAIT, SERIALIZE_TRAIT, SERIALIZER_TRAIT, SERIALIZER_TYPE,
+    DESERIALIZE_TRAIT, DESERIALIZER_TRAIT, DESERIALIZER_TYPE, MULTI_PASS_SERIALIZE_TRAIT, REVISABLE_SERIALIZER_TRAIT,
+    SERIALIZE_TRAIT, SERIALIZER_TRAIT, SERIALIZER_TYPE,
 };
 use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
@@ -35,7 +35,7 @@ impl ToTokens for ImplSerializeOp {
 
         let serializer_trait = match self.multi_pass {
             false => quote! { #SERIALIZER_TRAIT },
-            true => quote! { #MULTI_PASS_SERIALIZER_TRAIT },
+            true => quote! { #REVISABLE_SERIALIZER_TRAIT },
         };
 
         tokens.extend(quote! {
@@ -45,8 +45,8 @@ impl ToTokens for ImplSerializeOp {
                     &self,
                     #serializer: &mut #SERIALIZER_TYPE
                 ) -> ::core::result::Result<
-                        <#SERIALIZER_TYPE as #SERIALIZATION_OUTCOME_TRAIT>::Success,
-                        <#SERIALIZER_TYPE as #SERIALIZATION_OUTCOME_TRAIT>::Error
+                        <#SERIALIZER_TYPE as #SERIALIZER_TRAIT>::Success,
+                        <#SERIALIZER_TYPE as #SERIALIZER_TRAIT>::Error
                     >
                 {
                     #body

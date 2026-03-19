@@ -1,5 +1,5 @@
 use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
-use crate::ser_de::{RevisableSerializer, SerializationOutcome};
+use crate::ser_de::RevisableSerializer;
 
 use crate::byte_order::ByteOrder;
 use crate::error::{Error, ErrorKind};
@@ -12,7 +12,7 @@ use crate::stream_ser_de::context::Context;
 /// buffer.
 ///
 /// For streams that also implement both [`Read`] and [`Seek`], the serializer
-/// is also a [`sorbit::ser_de::MultiPassSerializer`].
+/// is also a [`RevisableSerializer`](sorbit::ser_de::RevisableSerializer).
 pub struct StreamSerializer<Stream: Write> {
     stream: Stream,
     // The current length of the stream.
@@ -78,12 +78,10 @@ impl<Stream: Write> StreamSerializer<Stream> {
     }
 }
 
-impl<Stream: Write> SerializationOutcome for StreamSerializer<Stream> {
+impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     type Success = RangeSpan;
     type Error = Error;
-}
 
-impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     fn success(&mut self) -> Result<Self::Success, Self::Error> {
         self.write(&[])
     }
