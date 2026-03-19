@@ -6,9 +6,10 @@ pub struct BitFieldType;
 pub struct TraceErrorTrait;
 
 pub struct SerializerTrait;
-pub struct SerializationOutcomeTrait;
+pub struct RevisableSerializerTrait;
 pub struct SerializerType;
 pub struct SerializeTrait;
+pub struct MultiPassSerializeTrait;
 
 pub struct DeserializerTrait;
 pub struct DeserializerType;
@@ -23,9 +24,10 @@ pub const BIT_FIELD_TYPE: BitFieldType = BitFieldType {};
 pub const TRACE_ERROR_TRAIT: TraceErrorTrait = TraceErrorTrait {};
 
 pub const SERIALIZER_TRAIT: SerializerTrait = SerializerTrait {};
-pub const SERIALIZATION_OUTCOME_TRAIT: SerializationOutcomeTrait = SerializationOutcomeTrait {};
+pub const REVISABLE_SERIALIZER_TRAIT: RevisableSerializerTrait = RevisableSerializerTrait {};
 pub const SERIALIZER_TYPE: SerializerType = SerializerType {};
 pub const SERIALIZE_TRAIT: SerializeTrait = SerializeTrait {};
+pub const MULTI_PASS_SERIALIZE_TRAIT: MultiPassSerializeTrait = MultiPassSerializeTrait {};
 
 pub const DESERIALIZER_TRAIT: DeserializerTrait = DeserializerTrait {};
 pub const DESERIALIZER_TYPE: DeserializerType = DeserializerType {};
@@ -52,9 +54,9 @@ impl ToTokens for SerializerTrait {
     }
 }
 
-impl ToTokens for SerializationOutcomeTrait {
+impl ToTokens for RevisableSerializerTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        tokens.extend(quote! {::sorbit::ser_de::SerializationOutcome});
+        tokens.extend(quote! {::sorbit::ser_de::RevisableSerializer});
     }
 }
 
@@ -67,6 +69,12 @@ impl ToTokens for SerializerType {
 impl ToTokens for SerializeTrait {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
         tokens.extend(quote! {::sorbit::ser_de::Serialize});
+    }
+}
+
+impl ToTokens for MultiPassSerializeTrait {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        tokens.extend(quote! {::sorbit::ser_de::MultiPassSerialize});
     }
 }
 

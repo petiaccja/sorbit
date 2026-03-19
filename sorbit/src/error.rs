@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 #[allow(missing_docs)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {
+    OutOfBounds,
     LengthExceedsPadding,
     UnexpectedEof,
     InvalidEnumVariant,
@@ -23,7 +24,7 @@ pub enum ErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     kind: ErrorKind,
-    item: Trace,
+    trace: Trace,
 }
 
 /// The location of the error that occured during serialization.
@@ -46,25 +47,44 @@ pub trait TraceError {
     fn annotate(self, ident: &str) -> Self;
 }
 
+/// Enable errors to contain a custom message.
+pub trait MessageError {
+    /// Create an error with the provided message.
+    fn message(message: &'static str) -> Self;
+}
+
 //------------------------------------------------------------------------------
 // Error implementations
 //------------------------------------------------------------------------------
 
+impl Error {
+    /// Return the kind of the error.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+}
+
 impl From<BitError> for Error {
     fn from(value: BitError) -> Self {
-        Self { kind: ErrorKind::Bit(value), item: Trace::default() }
+        Self { kind: ErrorKind::Bit(value), trace: Trace::default() }
     }
 }
 
 impl TraceError for Error {
     #[cfg(not(feature = "alloc"))]
     fn annotate(self, ident: &'static str) -> Self {
-        Self { kind: self.kind, item: self.item.annotate(ident) }
+        Self { kind: self.kind, trace: self.trace.annotate(ident) }
     }
 
     #[cfg(feature = "alloc")]
     fn annotate(self, ident: &str) -> Self {
-        Self { kind: self.kind, item: self.item.annotate(ident) }
+        Self { kind: self.kind, trace: self.trace.annotate(ident) }
+    }
+}
+
+impl MessageError for Error {
+    fn message(message: &'static str) -> Self {
+        Self { kind: ErrorKind::Custom(message), trace: Trace::default() }
     }
 }
 
@@ -72,8 +92,8 @@ impl core::error::Error for Error {}
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if !self.item.is_empty() {
-            write!(f, "{}: {}", self.item, self.kind)
+        if !self.trace.is_empty() {
+            write!(f, "{}: {}", self.trace, self.kind)
         } else {
             write!(f, "{}", self.kind)
         }
@@ -82,7 +102,7 @@ impl core::fmt::Display for Error {
 
 impl From<ErrorKind> for Error {
     fn from(value: ErrorKind) -> Self {
-        Self { kind: value, item: Trace::default() }
+        Self { kind: value, trace: Trace::default() }
     }
 }
 
@@ -94,6 +114,7 @@ impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use ErrorKind::*;
         match self {
+            OutOfBounds => write!(f, "reading/writing outside readable/writable area of the stream"),
             LengthExceedsPadding => write!(f, "the current length of the buffer already exceeds the requested padding"),
             UnexpectedEof => write!(f, "end of file reached, cannot read/write more data"),
             InvalidEnumVariant => write!(f, "the numeric value does not correspond to an enum or bool variant"),

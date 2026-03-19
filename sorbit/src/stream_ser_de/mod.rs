@@ -1,5 +1,6 @@
 //! A serializer and a deserializer that works with any stream.
 
+mod context;
 mod stream_deserializer;
 mod stream_serializer;
 

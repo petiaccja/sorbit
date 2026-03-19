@@ -2,6 +2,7 @@ use core::ops::{Add, BitOrAssign, Bound::*, Range, RangeBounds};
 use num::PrimInt;
 
 use crate::bit::Error;
+use crate::ser_de::{Deserialize, Serialize, Serializer};
 
 use super::bit_pack::{PackInto, UnpackFrom};
 use super::bit_util::{bit_size_of, keep_lowest_n_bits};
@@ -92,7 +93,6 @@ macro_rules! unpack_bit_field {
 impl<Packed> BitField<Packed>
 where
     Packed: PrimInt + BitOrAssign,
-    u64: PackInto<Packed>,
 {
     /// Create a new bit field all bits set to zero and the mask set to zero as well.
     pub fn new() -> Self {
@@ -129,6 +129,7 @@ where
         Value: PackInto<Packed>,
         BitRange: RangeBounds<BitScalar>,
         BitScalar: Add + Into<i64> + Clone,
+        u64: PackInto<Packed>,
     {
         let to_bits = reduce_range(&target_bits, &Self::space());
         Self::validate_range(&to_bits)?;
@@ -213,6 +214,25 @@ where
         (Unbounded, Included(end)) => 0..(end.clone().into() + 1),
         (Unbounded, Excluded(end)) => 0..(end.clone().into()),
         (Unbounded, Unbounded) => space.clone(),
+    }
+}
+
+impl<Packed> Serialize for BitField<Packed>
+where
+    Packed: Serialize + PrimInt + BitOrAssign,
+{
+    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+        self.bits.serialize(serializer)
+    }
+}
+
+impl<Packed> Deserialize for BitField<Packed>
+where
+    Packed: Deserialize + PrimInt + BitOrAssign,
+{
+    fn deserialize<D: crate::ser_de::Deserializer>(deserializer: &mut D) -> Result<Self, D::Error> {
+        let bits = Packed::deserialize(deserializer)?;
+        Ok(Self::from_bits(bits))
     }
 }
 

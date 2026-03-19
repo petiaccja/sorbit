@@ -1,6 +1,7 @@
 mod attribute;
 mod r#enum;
 mod ir;
+mod ops;
 mod r#struct;
 mod utility;
 

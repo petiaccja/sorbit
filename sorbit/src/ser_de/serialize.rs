@@ -1,6 +1,4 @@
-use crate::ser_de::MultiPassSerializer;
-
-use super::Serializer;
+use crate::ser_de::{RevisableSerializer, Serializer};
 
 /// The type can be serialized into a [`Serializer`].
 ///
@@ -19,7 +17,8 @@ pub trait Serialize {
     fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
 
-/// The type can be serialized into a [`MultiPassSerializer`].
+/// The type requires multiple passes during serialization and can be
+/// serialized only into a [`RevisableSerializer`].
 ///
 /// This trait is analogous to [`Serialize`], but is meant for types that require
 /// the extra features provided by multi-pass serializers. See [`Serialize`] for
@@ -28,7 +27,7 @@ pub trait MultiPassSerialize {
     /// Try to serialize this object into the `serializer`.
     ///
     /// See [`Serialize::serialize`] for more information.
-    fn serialize<S: MultiPassSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
+    fn serialize<S: RevisableSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error>;
 }
 
 /// Blanket implementation of serialize for references.

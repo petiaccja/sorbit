@@ -1,19 +1,22 @@
+use std::collections::{HashMap, HashSet};
+
 use syn::{Generics, Ident, Member};
 
-use crate::attribute::ByteOrder;
-use crate::ir::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
-use crate::ir::dag::{Region, Value};
-use crate::ir::ops::{
-    deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, self_, serialize_composite,
-    struct_, success, try_, tuple, yield_,
+use crate::attribute::{ByteOrder, Transform};
+use crate::ir::{Region, Value};
+use crate::ops::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
+use crate::ops::{
+    self, deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, revise_span, self_,
+    serialize_composite, struct_, success, sym, try_, tuple,
 };
+use crate::r#struct::ast::conversion::{add_symmetric_transforms, check_transforms};
 use crate::r#struct::ast::field::BitFieldMember;
 use crate::utility::{ident_to_type, member_to_ident};
 
 use super::super::parse;
+use super::conversion::to_layout_fields;
 use super::field::Field;
-use super::field_group::group_fields;
-use crate::ir::dag::{ToDeserializeOp, ToSerializeOp};
+use crate::ir::{ToDeserializeOp, ToSerializeOp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -28,11 +31,13 @@ pub struct Struct {
 impl TryFrom<parse::Struct> for Struct {
     type Error = syn::Error;
     fn try_from(value: parse::Struct) -> Result<Self, Self::Error> {
-        let field_groups = group_fields(value.fields.into_iter())?;
-        let fields = field_groups
+        let symmetric_fields = add_symmetric_transforms(value.fields)?;
+        let layout_fields = to_layout_fields(symmetric_fields.into_iter())?;
+        let fields = layout_fields
             .into_iter()
             .map(|field_group| field_group.into_field())
             .collect::<Result<Vec<_>, _>>()?;
+        check_transforms(fields.iter())?;
         Ok(Self {
             ident: value.ident,
             generics: value.generics,
@@ -48,11 +53,16 @@ impl ToSerializeOp for Struct {
     type Args = ();
 
     fn to_serialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
-        impl_serialize(region, self.ident.clone(), self.generics.clone(), |region, serializer| {
-            self.destructure(region);
-            let result = self.serialize_members(region, serializer);
-            yield_(region, vec![result]);
-        });
+        impl_serialize(
+            region,
+            self.ident.clone(),
+            self.generics.clone(),
+            self.is_multi_pass(),
+            Region::build(|region, [serializer]| {
+                self.destructure(region);
+                vec![self.serialize_members(region, serializer)]
+            }),
+        );
         vec![]
     }
 }
@@ -61,60 +71,159 @@ impl ToDeserializeOp for Struct {
     type Args = ();
 
     fn to_deserialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
-        impl_deserialize(region, self.ident.clone(), self.generics.clone(), |region, deserializer| {
-            let result = self.deserialize_members(region, deserializer);
-            yield_(region, vec![result]);
-        });
+        impl_deserialize(
+            region,
+            self.ident.clone(),
+            self.generics.clone(),
+            Region::build(|region, [deserializer]| vec![self.deserialize_members(region, deserializer)]),
+        );
         vec![]
     }
 }
 
 impl Struct {
+    pub fn is_multi_pass(&self) -> bool {
+        self.fields.iter().any(|field| match field {
+            Field::Direct { transform, multi_pass, .. } => {
+                matches!(transform, Transform::ByteCount(_)) || *multi_pass == Some(true)
+            }
+            Field::Bit { members, .. } => {
+                members.iter().any(|member| matches!(member.transform, Transform::ByteCount(_)))
+            }
+        })
+    }
+
     pub fn serialize_members(&self, region: &mut Region, serializer: Value) -> Value {
         with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
-            let maybe_composite = serialize_composite(region, serializer, |region, serializer| {
-                if self.fields.is_empty() {
-                    let success_ = success(region, serializer.clone());
-                    with_maybe_offset(region, serializer, self.len, true);
-                    with_maybe_alignment(region, serializer, self.round, true);
-                    let _ = yield_(region, vec![success_]);
-                } else {
-                    let maybe_spans: Vec<_> =
-                        self.fields.iter().map(|field| field.to_serialize_op(region, serializer)).flatten().collect();
-                    let spans: Vec<_> = maybe_spans.into_iter().map(|maybe_span| try_(region, maybe_span)).collect();
-                    with_maybe_offset(region, serializer, self.len, true);
-                    with_maybe_alignment(region, serializer, self.round, true);
-                    let span_tuple = tuple(region, spans);
-                    let result = ok(region, span_tuple);
-                    let _ = yield_(region, vec![result]);
+            let composite_result = serialize_composite(
+                region,
+                serializer,
+                Region::build(|region, [serializer]| {
+                    if self.fields.is_empty() {
+                        let success_ = success(region, serializer.clone());
+                        with_maybe_offset(region, serializer, self.len, true);
+                        with_maybe_alignment(region, serializer, self.round, true);
+                        vec![success_]
+                    } else {
+                        let maybe_spans: Vec<_> = self
+                            .fields
+                            .iter()
+                            .map(|field| field.to_serialize_op(region, (serializer, true)))
+                            .flatten()
+                            .collect();
+                        let spans: Vec<_> =
+                            maybe_spans.into_iter().map(|maybe_span| try_(region, maybe_span)).collect();
+                        with_maybe_offset(region, serializer, self.len, true);
+                        with_maybe_alignment(region, serializer, self.round, true);
+                        let span_tuple = tuple(region, spans);
+                        let result = ok(region, span_tuple);
+                        vec![result]
+                    }
+                }),
+            );
+            let composite = try_(region, composite_result);
+            let composite_span = member(region, composite, syn::Member::from(0), false);
+
+            // Update byte count fields.
+            let revise_byte_count: Vec<_> = self
+                .fields
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, field)| match field {
+                    Field::Direct { transform: Transform::ByteCountBy(byte_count), .. } => Some((byte_count, idx)),
+                    _ => None,
+                })
+                .collect();
+
+            if !revise_byte_count.is_empty() {
+                let field_spans = member(region, composite, syn::Member::from(1), false);
+
+                let mut field_tys = HashMap::new();
+                self.fields.iter().for_each(|field| match field {
+                    Field::Direct { member, ty, .. } => {
+                        let _ = field_tys.insert(member, ty);
+                    }
+                    Field::Bit { members, .. } => members.iter().for_each(|member| {
+                        let _ = field_tys.insert(&member.member, &member.ty);
+                    }),
+                });
+
+                let mut field_storages = HashMap::new();
+                self.fields.iter().enumerate().for_each(|(index, field)| match field {
+                    Field::Direct { member, .. } => {
+                        let _ = field_storages.insert(member, index);
+                    }
+                    Field::Bit { members, .. } => members.iter().for_each(|member| {
+                        let _ = field_storages.insert(&member.member, index);
+                    }),
+                });
+
+                for (byte_count, of_idx) in &revise_byte_count {
+                    let byte_count_ty = field_tys[byte_count];
+                    let field_span = ops::member(region, field_spans, syn::Member::from(*of_idx), true);
+                    let result_byte_count = ops::byte_count(region, serializer, field_span, byte_count_ty.clone());
+                    let byte_count_val = try_(region, result_byte_count);
+                    sym(region, byte_count_val, member_to_ident((*byte_count).clone()));
                 }
-            });
-            let composite = try_(region, maybe_composite);
-            let span = member(region, composite, syn::Member::Unnamed(syn::Index::from(0)), false);
-            ok(region, span)
+
+                let reserialize_storages: HashSet<_> =
+                    revise_byte_count.iter().map(|(byte_count, _)| field_storages[byte_count]).collect();
+
+                for field_idx in reserialize_storages {
+                    let field = &self.fields[field_idx];
+                    let span = member(region, field_spans, syn::Member::from(field_idx), true);
+                    revise_span(
+                        region,
+                        serializer,
+                        span,
+                        Region::build(|region, [serializer]| {
+                            let results = field.to_serialize_op(region, (serializer, false));
+                            for result in results {
+                                try_(region, result);
+                            }
+                            vec![success(region, serializer)]
+                        }),
+                    );
+                }
+            }
+
+            ok(region, composite_span)
         })
     }
 
     pub fn deserialize_members(&self, region: &mut Region, deserializer: Value) -> Value {
         with_maybe_byte_order(region, deserializer, self.byte_order, false, |region, deserializer| {
-            deserialize_composite(region, deserializer, |region, deserializer| {
-                let maybe_fields: Vec<_> =
-                    self.fields.iter().map(|field| field.to_deserialize_op(region, deserializer)).flatten().collect();
-                let fields: Vec<_> =
-                    maybe_fields.iter().map(|maybe_deserialized| try_(region, *maybe_deserialized)).collect();
-                let members = self.members();
+            deserialize_composite(
+                region,
+                deserializer,
+                Region::build(|region, [deserializer]| {
+                    let fields: Vec<_> = self
+                        .fields
+                        .iter()
+                        .map(|field| {
+                            let results = field.to_deserialize_op(region, deserializer);
+                            let members = field.members();
+                            let values: Vec<_> = results.iter().map(|result| try_(region, *result)).collect();
+                            std::iter::zip(members, &values)
+                                .for_each(|(member, value)| sym(region, *value, member_to_ident(member.clone())));
+                            values
+                        })
+                        .flatten()
+                        .collect();
+                    let members = self.members();
 
-                with_maybe_offset(region, deserializer, self.len, false);
-                with_maybe_alignment(region, deserializer, self.round, false);
+                    with_maybe_offset(region, deserializer, self.len, false);
+                    with_maybe_alignment(region, deserializer, self.round, false);
 
-                let struct_ = struct_(
-                    region,
-                    syn::TypePath { qself: None, path: syn::Path::from(self.ident.clone()) }.into(),
-                    members.into_iter().cloned().zip(fields.into_iter()).collect(),
-                );
-                let result = ok(region, struct_);
-                let _ = yield_(region, vec![result]);
-            })
+                    let struct_ = struct_(
+                        region,
+                        syn::TypePath { qself: None, path: syn::Path::from(self.ident.clone()) }.into(),
+                        members.into_iter().cloned().zip(fields.into_iter()).collect(),
+                    );
+                    let result = ok(region, struct_);
+                    vec![result]
+                }),
+            )
         })
     }
 
@@ -145,6 +254,7 @@ impl Struct {
 mod tests {
     use syn::{DeriveInput, parse_quote};
 
+    use crate::attribute::Transform;
     use crate::ir::pattern_match::assert_matches;
 
     use super::*;
@@ -173,15 +283,15 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, < 'x T : Clone >, false ] |%serializer| {
                 %self = self
-                destructure %self
+                destructure [ Test ] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
                     %nothing = success %s_inner
                     yield %nothing
                 }
                 %composite = try %maybe_composite
-                %span = member [0, val] %composite
+                %span = member [0, false] %composite
                 %ok_span = ok %span
                 yield %ok_span
             }
@@ -207,9 +317,9 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
-                destructure %self
+                destructure [ Test ] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
                     %nothing = success %s_inner
                     %maybe_len = pad [12, true] %s_inner
@@ -219,7 +329,7 @@ mod tests {
                     yield %nothing
                 }
                 %composite = try %maybe_composite
-                %span = member [0, val] %composite
+                %span = member [0, false] %composite
                 %ok_span = ok %span
                 yield %ok_span
             }
@@ -240,18 +350,16 @@ mod tests {
                 Field::Direct {
                     member: parse_quote!(foo),
                     ty: parse_quote!(u8),
-                    byte_order: None,
-                    offset: None,
-                    align: None,
-                    round: None,
+                    multi_pass: None,
+                    transform: Transform::None,
+                    layout_properties: Default::default(),
                 },
                 Field::Direct {
                     member: parse_quote!(bar),
                     ty: parse_quote!(i8),
-                    byte_order: None,
-                    offset: None,
-                    align: None,
-                    round: None,
+                    multi_pass: None,
+                    transform: Transform::None,
+                    layout_properties: Default::default(),
                 },
             ],
         };
@@ -262,15 +370,15 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
-                destructure [foo:foo, bar:bar] %self
+                destructure [Test, foo: foo, bar: bar] %self
                 %maybe_composite = serialize_composite %serializer |%s_inner| {
                     %foo = symref [foo]
-                    %maybe_span_foo = serialize_object %s_inner, %foo
+                    %maybe_span_foo = serialize_object [false] %s_inner, %foo
 
                     %bar = symref [bar]
-                    %maybe_span_bar = serialize_object %s_inner, %bar
+                    %maybe_span_bar = serialize_object [false] %s_inner, %bar
 
                     %span_foo = try %maybe_span_foo
                     %span_bar = try %maybe_span_bar
@@ -279,7 +387,7 @@ mod tests {
                     yield %ok_spans
                 }
                 %composite = try %maybe_composite
-                %span = member [0, val] %composite
+                %span = member [0, false] %composite
                 %ok_span = ok %span
                 yield %ok_span
             }
@@ -312,7 +420,7 @@ mod tests {
 
         let pattern = "
         {
-            impl_deserialize [ Test ] |%deserializer| {
+            impl_deserialize [ Test, < 'x T : Clone > ] |%deserializer| {
                 %maybe_composite = deserialize_composite %deserializer |%de_inner| {
                     %struct = struct [Test]
                     %ok_struct = ok %struct

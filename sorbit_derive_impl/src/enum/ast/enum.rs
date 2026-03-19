@@ -6,11 +6,11 @@ use syn::{BinOp, Expr, ExprBinary, ExprLit, Generics, Ident, Lit, LitInt, Token,
 use crate::attribute::ByteOrder;
 use crate::r#enum::ast::variant::Variant;
 use crate::r#enum::parse;
-use crate::ir::algorithm::with_maybe_byte_order;
-use crate::ir::dag::{Region, ToDeserializeOp, ToSerializeOp, Value};
-use crate::ir::ops::{
+use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
+use crate::ops::algorithm::with_maybe_byte_order;
+use crate::ops::{
     custom_expr, deserialize_object, error, impl_deserialize, impl_serialize, match_, member, ok, ref_, self_,
-    serialize_composite, serialize_object, struct_, try_, use_, yield_,
+    serialize_composite, serialize_object, struct_, try_, use_,
 };
 use crate::r#struct::ast::Struct;
 use crate::utility::deconstruct_pattern;
@@ -44,7 +44,7 @@ impl Enum {
         storage_ty: &Type,
         serializer: Value,
         variant: &Variant,
-    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+    ) -> (syn::Pat, Option<Expr>, Region) {
         let variant_ident = &variant.ident;
         let pat = if let Some(content) = &variant.content {
             deconstruct_pattern(&parse_quote!(#self_ident::#variant_ident), content.members().into_iter())
@@ -54,26 +54,30 @@ impl Enum {
         let discriminant_expr = variant.discriminant.clone();
         let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
         let content = variant.content.as_ref().cloned();
-        let body = move |region: &mut Region| {
+        let body = Region::build(move |region: &mut Region, []| {
             if let Some(content) = content {
-                let result_comp = serialize_composite(region, serializer, move |region, serializer| {
-                    let discriminant = custom_expr(region, discriminant_cast);
-                    let disc_ref = ref_(region, discriminant);
-                    let disc_result = serialize_object(region, serializer, disc_ref);
-                    try_(region, disc_result);
-                    let result = content.serialize_members(region, serializer);
-                    yield_(region, vec![result]);
-                });
+                let result_comp = serialize_composite(
+                    region,
+                    serializer,
+                    Region::build(move |region, [serializer]| {
+                        let discriminant = custom_expr(region, discriminant_cast);
+                        let disc_ref = ref_(region, discriminant);
+                        let disc_result = serialize_object(region, serializer, disc_ref, false);
+                        try_(region, disc_result);
+                        let result = content.serialize_members(region, serializer);
+                        vec![result]
+                    }),
+                );
                 let span_comp = try_(region, result_comp);
                 let span_comp0 = member(region, span_comp, syn::Member::from(0), false);
-                ok(region, span_comp0)
+                vec![ok(region, span_comp0)]
             } else {
                 let discriminant = custom_expr(region, discriminant_cast);
                 let disc_ref = ref_(region, discriminant);
-                serialize_object(region, serializer, disc_ref)
+                vec![serialize_object(region, serializer, disc_ref, false)]
             }
-        };
-        (pat, None, Box::new(body) as Box<_>)
+        });
+        (pat, None, body)
     }
 
     fn catch_all_arm_serialize(
@@ -82,27 +86,27 @@ impl Enum {
         serializer: Value,
         variant: &Variant,
         store_disc: bool,
-    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+    ) -> (syn::Pat, Option<Expr>, Region) {
         let variant_ident = &variant.ident;
         if store_disc {
             let pat = parse_quote!(#self_ident::#variant_ident(value));
             let value_expr = parse_quote!(value);
-            let body = move |region: &mut Region| {
+            let body = Region::build(move |region, []| {
                 let discriminant = custom_expr(region, value_expr);
                 let disc_ref = ref_(region, discriminant);
-                serialize_object(region, serializer, disc_ref)
-            };
-            (pat, None, Box::new(body) as Box<_>)
+                vec![serialize_object(region, serializer, disc_ref, false)]
+            });
+            (pat, None, body)
         } else {
             let pat = parse_quote!(#self_ident::#variant_ident);
             let discriminant_expr = variant.discriminant.clone();
             let discriminant_cast = parse_quote!( (#discriminant_expr) as #storage_ty );
-            let body = move |region: &mut Region| {
+            let body = Region::build(move |region, []| {
                 let discriminant = custom_expr(region, discriminant_cast);
                 let disc_ref = ref_(region, discriminant);
-                serialize_object(region, serializer, disc_ref)
-            };
-            (pat, None, Box::new(body) as Box<_>)
+                vec![serialize_object(region, serializer, disc_ref, false)]
+            });
+            (pat, None, body)
         }
     }
 
@@ -111,23 +115,23 @@ impl Enum {
         discriminant: Value,
         variant: &Variant,
         store_disc: bool,
-    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+    ) -> (syn::Pat, Option<Expr>, Region) {
         let variant_ident = &variant.ident;
         let pat = parse_quote!(_);
         if store_disc {
             let struct_ty = parse_quote!(#self_ident::#variant_ident);
-            let body = move |region: &mut Region| {
+            let body = Region::build(move |region, []| {
                 let value = struct_(region, struct_ty, vec![(syn::Member::from(0), discriminant)]);
-                ok(region, value)
-            };
-            (pat, None, Box::new(body) as Box<_>)
+                vec![ok(region, value)]
+            });
+            (pat, None, body)
         } else {
             let struct_ty = parse_quote!(#self_ident::#variant_ident);
-            let body = move |region: &mut Region| {
+            let body = Region::build(move |region, []| {
                 let value = struct_(region, struct_ty, vec![]);
-                ok(region, value)
-            };
-            (pat, None, Box::new(body) as Box<_>)
+                vec![ok(region, value)]
+            });
+            (pat, None, body)
         }
     }
 
@@ -135,7 +139,7 @@ impl Enum {
         self_ident: &Ident,
         variant: &Variant,
         deserializer: Value,
-    ) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+    ) -> (syn::Pat, Option<Expr>, Region) {
         let variant_ident = variant.ident.clone();
         let pat = parse_quote!(discriminant);
         let discriminant_expr = &variant.discriminant;
@@ -143,16 +147,16 @@ impl Enum {
         let struct_ty = parse_quote!(#self_ident::#variant_ident);
         let content = variant.content.as_ref().cloned();
         let self_ident = self_ident.clone();
-        let body = move |region: &mut Region| {
+        let body = Region::build(move |region, []| {
             if let Some(content) = content {
                 use_(region, parse_quote!(#self_ident::#variant_ident));
-                content.deserialize_members(region, deserializer)
+                vec![content.deserialize_members(region, deserializer)]
             } else {
                 let value = struct_(region, struct_ty, vec![]);
-                ok(region, value)
+                vec![ok(region, value)]
             }
-        };
-        (pat, Some(guard_expr), Box::new(body) as Box<_>)
+        });
+        (pat, Some(guard_expr), body)
     }
 }
 
@@ -204,20 +208,26 @@ impl TryFrom<parse::Enum> for Enum {
 impl ToSerializeOp for Enum {
     type Args = ();
     fn to_serialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
-        impl_serialize(region, self.ident.clone(), self.generics.clone(), |region, serializer| {
-            let result = with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
-                let self_ = self_(region);
-                let normal_arms = self
-                    .normal_variants()
-                    .map(|variant| Self::normal_arm_serialize(&self.ident, &self.storage_ty, serializer, variant));
-                let catch_all_arm = self.catch_all_variant().map(|(variant, store_disc)| {
-                    Self::catch_all_arm_serialize(&self.ident, &self.storage_ty, serializer, variant, store_disc)
+        impl_serialize(
+            region,
+            self.ident.clone(),
+            self.generics.clone(),
+            self.is_multi_pass(),
+            Region::build(|region, [serializer]| {
+                let result = with_maybe_byte_order(region, serializer, self.byte_order, true, |region, serializer| {
+                    let self_ = self_(region);
+                    let normal_arms = self
+                        .normal_variants()
+                        .map(|variant| Self::normal_arm_serialize(&self.ident, &self.storage_ty, serializer, variant));
+                    let catch_all_arm = self.catch_all_variant().map(|(variant, store_disc)| {
+                        Self::catch_all_arm_serialize(&self.ident, &self.storage_ty, serializer, variant, store_disc)
+                    });
+                    let arms = normal_arms.chain(catch_all_arm);
+                    match_(region, self_, arms.collect())
                 });
-                let arms = normal_arms.chain(catch_all_arm);
-                match_(region, self_, arms)
-            });
-            let _ = yield_(region, vec![result]);
-        });
+                vec![result]
+            }),
+        );
         vec![]
     }
 }
@@ -225,35 +235,54 @@ impl ToSerializeOp for Enum {
 impl ToDeserializeOp for Enum {
     type Args = ();
     fn to_deserialize_op(&self, region: &mut Region, _: Self::Args) -> Vec<Value> {
-        impl_deserialize(region, self.ident.clone(), self.generics.clone(), |region, deserializer| {
-            let result = with_maybe_byte_order(region, deserializer, self.byte_order, false, |region, deserializer| {
-                let maybe_discriminant = deserialize_object(region, deserializer, self.storage_ty.clone());
-                let discriminant = try_(region, maybe_discriminant);
-                let normal_arms = self
-                    .normal_variants()
-                    .map(|variant| Self::normal_arm_deserialize(&self.ident, variant, deserializer));
-                let unmatched_arm = self
-                    .catch_all_variant()
-                    .map(|(variant, store_disc)| {
-                        Self::catch_all_arm_deserialize(&self.ident, discriminant, variant, store_disc)
-                    })
-                    .unwrap_or_else(|| mismatch_arm_deserialize(deserializer));
-                let arms = normal_arms.chain(std::iter::once(unmatched_arm));
-                match_(region, discriminant, arms)
-            });
-            let _ = yield_(region, vec![result]);
-        });
+        impl_deserialize(
+            region,
+            self.ident.clone(),
+            self.generics.clone(),
+            Region::build(|region, [deserializer]| {
+                let result =
+                    with_maybe_byte_order(region, deserializer, self.byte_order, false, |region, deserializer| {
+                        let maybe_discriminant = deserialize_object(region, deserializer, self.storage_ty.clone());
+                        let discriminant = try_(region, maybe_discriminant);
+                        let normal_arms = self
+                            .normal_variants()
+                            .map(|variant| Self::normal_arm_deserialize(&self.ident, variant, deserializer));
+                        let unmatched_arm = self
+                            .catch_all_variant()
+                            .map(|(variant, store_disc)| {
+                                Self::catch_all_arm_deserialize(&self.ident, discriminant, variant, store_disc)
+                            })
+                            .unwrap_or_else(|| mismatch_arm_deserialize(deserializer));
+                        let arms = normal_arms.chain(std::iter::once(unmatched_arm));
+                        match_(region, discriminant, arms.collect())
+                    });
+                vec![result]
+            }),
+        );
         vec![]
     }
 }
 
-fn mismatch_arm_deserialize(deserializer: Value) -> (syn::Pat, Option<Expr>, Box<dyn FnOnce(&mut Region) -> Value>) {
+fn mismatch_arm_deserialize(deserializer: Value) -> (syn::Pat, Option<Expr>, Region) {
     let pat = parse_quote!(_);
-    let body = move |region: &mut Region| error(region, deserializer, "invalid enum discriminant".into());
-    (pat, None, Box::new(body) as Box<_>)
+    let body = Region::build(move |region: &mut Region, []| {
+        vec![error(
+            region,
+            deserializer,
+            "invalid enum discriminant".into(),
+        )]
+    });
+    (pat, None, body)
 }
 
 impl Enum {
+    pub fn is_multi_pass(&self) -> bool {
+        self.variants
+            .iter()
+            .filter_map(|variant| variant.content.as_ref())
+            .any(|content| content.is_multi_pass())
+    }
+
     pub fn to_pack_into_tokens(&self) -> TokenStream {
         let ident = &self.ident;
         let storage_ty = &self.storage_ty;
@@ -359,7 +388,9 @@ fn literal_int_expr(value: isize) -> Expr {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ir::pattern_match::assert_matches, r#struct::ast::Field};
+    use crate::attribute::Transform;
+    use crate::ir::pattern_match::assert_matches;
+    use crate::r#struct::ast::Field;
 
     use super::*;
 
@@ -448,10 +479,9 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(0),
                             ty: parse_quote!(u8),
-                            byte_order: None,
-                            offset: None,
-                            align: None,
-                            round: None,
+                            multi_pass: None,
+                            transform: Transform::None,
+                            layout_properties: Default::default(),
                         }],
                     }),
                 },
@@ -467,10 +497,9 @@ mod tests {
                         fields: vec![Field::Direct {
                             member: parse_quote!(b),
                             ty: parse_quote!(i8),
-                            byte_order: None,
-                            offset: None,
-                            align: None,
-                            round: None,
+                            multi_pass: None,
+                            transform: Transform::None,
+                            layout_properties: Default::default(),
                         }],
                     }),
                 },
@@ -488,19 +517,19 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: B => {
                         %disc_b = custom_expr [(1) as u16]
                         %disc_b_ref = ref %disc_b
-                        %result_b = serialize_object %serializer, %disc_b_ref
+                        %result_b = serialize_object [false] %serializer, %disc_b_ref
                         yield %result_b
                     }
                 }
@@ -526,12 +555,12 @@ mod tests {
                 %discriminant = try %maybe_discriminant
                 %result = match %discriminant {
                     discriminant if discriminant == 0 => {
-                        %result_a = struct [Test :: A]
+                        %result_a = struct [Test::A]
                         %result_a_ok = ok %result_a
                         yield %result_a_ok
                     }
                     discriminant if discriminant == 1 => {
-                        %result_b = struct [Test :: B]
+                        %result_b = struct [Test::B]
                         %result_b_ok = ok %result_b
                         yield %result_b_ok
                     }
@@ -557,19 +586,19 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: CatchAll => {
                         %disc_b = custom_expr [(1) as u16]
                         %disc_b_ref = ref %disc_b
-                        %result_b = serialize_object %serializer, %disc_b_ref
+                        %result_b = serialize_object [false] %serializer, %disc_b_ref
                         yield %result_b
                     }
                 }
@@ -590,19 +619,19 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A => {
                         %disc_a = custom_expr [(0) as u16]
                         %disc_a_ref = ref %disc_a
-                        %result_a = serialize_object %serializer, %disc_a_ref
+                        %result_a = serialize_object [false] %serializer, %disc_a_ref
                         yield %result_a
                     }
                     Test :: CatchAll (value) => {
                         %disc_ca = custom_expr [value]
                         %disc_ca_ref = ref %disc_ca
-                        %result_ca = serialize_object %serializer, %disc_ca_ref
+                        %result_ca = serialize_object [false] %serializer, %disc_ca_ref
                         yield %result_ca
                     }
                 }
@@ -628,12 +657,12 @@ mod tests {
                 %discriminant = try %maybe_discriminant
                 %result = match %discriminant {
                     discriminant if discriminant == 0 => {
-                        %result_a = struct [Test :: A]
+                        %result_a = struct [Test::A]
                         %result_a_ok = ok %result_a
                         yield %result_a_ok
                     }
                     _ => {
-                        %result_ca = struct [Test :: CatchAll]
+                        %result_ca = struct [Test::CatchAll]
                         %result_ca_ok = ok %result_ca
                         yield %result_ca_ok
                     }
@@ -660,12 +689,12 @@ mod tests {
                 %discriminant = try %maybe_discriminant
                 %result = match %discriminant {
                     discriminant if discriminant == 0 => {
-                        %result_a = struct [Test :: A]
+                        %result_a = struct [Test::A]
                         %result_a_ok = ok %result_a
                         yield %result_a_ok
                     }
                     _ => {
-                        %result_ca = struct [Test :: CatchAll, 0] %discriminant
+                        %result_ca = struct [Test::CatchAll, 0] %discriminant
                         %result_ca_ok = ok %result_ca
                         yield %result_ca_ok
                     }
@@ -687,19 +716,19 @@ mod tests {
 
         let pattern = "
         {
-            impl_serialize [ Test ] |%serializer| {
+            impl_serialize [ Test, false ] |%serializer| {
                 %self = self
                 %span = match %self {
                     Test :: A { 0 : m0 } => {
                         %result_comp_a = serialize_composite %serializer |%se_inner_a| {
                             %disc_a = custom_expr [(0) as u16]
                             %disc_a_ref = ref %disc_a
-                            %result_disc_a = serialize_object %se_inner_a, %disc_a_ref
+                            %result_disc_a = serialize_object [false] %se_inner_a, %disc_a_ref
                             %span_disc_a = try %result_disc_a
 
                             %result_cont_a = serialize_composite %se_inner_a |%se_cont_a| {
                                 %m0 = symref [m0]
-                                %maybe_span_m0 = serialize_object %se_cont_a, %m0
+                                %maybe_span_m0 = serialize_object [false] %se_cont_a, %m0
 
                                 %span_m0 = try %maybe_span_m0
                                 %spans_a = tuple %span_m0
@@ -707,12 +736,12 @@ mod tests {
                                 yield %result_spans_a
                             }
                             %span_cont_a = try %result_cont_a
-                            %span_cont_a0 = member [0, val] %span_cont_a
+                            %span_cont_a0 = member [0, false] %span_cont_a
                             %result_cont_a0 = ok %span_cont_a0
                             yield %result_cont_a0
                         }
                         %span_comp_a = try %result_comp_a
-                        %span_all_a = member [0, val] %span_comp_a
+                        %span_all_a = member [0, false] %span_comp_a
                         %result_a = ok %span_all_a
                         yield %result_a
                     }
@@ -720,12 +749,12 @@ mod tests {
                         %result_comp_b = serialize_composite %serializer |%se_inner_b| {
                             %disc_b = custom_expr [(1) as u16]
                             %disc_b_ref = ref %disc_b
-                            %result_disc_b = serialize_object %se_inner_b, %disc_b_ref
+                            %result_disc_b = serialize_object [false] %se_inner_b, %disc_b_ref
                             %span_disc_b = try %result_disc_b
 
                             %result_cont_b = serialize_composite %se_inner_b |%se_cont_b| {
                                 %b = symref [b]
-                                %maybe_span_b = serialize_object %se_cont_b, %b
+                                %maybe_span_b = serialize_object [false] %se_cont_b, %b
 
                                 %span_b = try %maybe_span_b
                                 %spans_b = tuple %span_b
@@ -733,12 +762,12 @@ mod tests {
                                 yield %result_spans_b
                             }
                             %span_cont_b = try %result_cont_b
-                            %span_cont_b0 = member [0, val] %span_cont_b
+                            %span_cont_b0 = member [0, false] %span_cont_b
                             %result_cont_b0 = ok %span_cont_b0
                             yield %result_cont_b0
                         }
                         %span_comp_b = try %result_comp_b
-                        %span_all_b = member [0, val] %span_comp_b
+                        %span_all_b = member [0, false] %span_comp_b
                         %result_b = ok %span_all_b
                         yield %result_b
                     }
@@ -765,10 +794,11 @@ mod tests {
                 %discriminant = try %maybe_discriminant
                 %result = match %discriminant {
                     discriminant if discriminant == 0 => {
-                        use [Test :: A]
+                        use [Test::A]
                         %result_cont_a = deserialize_composite %deserializer |%de_cont_a| {
                             %result_m0 = deserialize_object [u8] %de_cont_a
                             %m0 = try %result_m0
+                            sym [m0] %m0
                             %struct_a = struct [A, 0] %m0
                             %result_struct_a = ok %struct_a
                             yield %result_struct_a
@@ -776,10 +806,11 @@ mod tests {
                         yield %result_cont_a
                     }
                     discriminant if discriminant == 1 => {
-                        use [Test :: B]
+                        use [Test::B]
                         %result_cont_b = deserialize_composite %deserializer |%de_cont_b| {
                             %result_b = deserialize_object [i8] %de_cont_b
                             %b = try %result_b
+                            sym [b] %b
                             %struct_b = struct [B, b] %b
                             %result_struct_b = ok %struct_b
                             yield %result_struct_b

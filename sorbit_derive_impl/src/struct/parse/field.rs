@@ -1,3 +1,4 @@
+use proc_macro2::Span;
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -5,32 +6,74 @@ use std::{
 use syn::{Expr, Ident, Path, Type, spanned::Spanned};
 
 use crate::attribute::{
-    BitNumbering, ByteOrder, as_bit_numbering, as_byte_order, as_ident, as_literal_int, as_literal_int_range, as_type,
-    parse_nvp_attribute_group, path,
+    BitNumbering, ByteOrder, Transform, as_bit_numbering, as_byte_order, as_ident, as_literal_bool, as_literal_int,
+    as_literal_int_range, as_transform, as_type, parse_nvp_attribute_group, path,
 };
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct FieldLayoutProperties {
+    pub byte_order: Option<ByteOrder>,
+    pub offset: Option<u64>,
+    pub align: Option<u64>,
+    pub round: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BitFieldStorageProperties {
+    pub storage_ty: Option<Type>,
+    pub bit_numbering: Option<BitNumbering>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Field {
     Direct {
         ident: Option<Ident>,
         ty: Type,
-        byte_order: Option<ByteOrder>,
-        offset: Option<u64>,
-        align: Option<u64>,
-        round: Option<u64>,
+        multi_pass: Option<bool>,
+        transform: Transform,
+        layout_properties: FieldLayoutProperties,
     },
     Bit {
         ident: Option<Ident>,
         ty: Type,
+        multi_pass: Option<bool>,
+        transform: Transform,
         bits: Range<u8>,
-        storage_id: Ident,
-        storage_ty: Option<Type>,
-        byte_order: Option<ByteOrder>,
-        bit_numbering: Option<BitNumbering>,
-        offset: Option<u64>,
-        align: Option<u64>,
-        round: Option<u64>,
+        storage_ident: Ident,
+        storage_properties: BitFieldStorageProperties,
+        layout_properties: FieldLayoutProperties,
     },
+}
+
+impl Field {
+    pub fn ident(&self) -> Option<&Ident> {
+        match self {
+            Field::Direct { ident, .. } => ident.as_ref(),
+            Field::Bit { ident, .. } => ident.as_ref(),
+        }
+    }
+
+    pub fn transform(&self) -> &Transform {
+        match self {
+            Field::Direct { transform, .. } => transform,
+            Field::Bit { transform, .. } => transform,
+        }
+    }
+
+    pub fn transform_mut(&mut self) -> &mut Transform {
+        match self {
+            Field::Direct { transform, .. } => transform,
+            Field::Bit { transform, .. } => transform,
+        }
+    }
+
+    pub fn span(&self) -> Span {
+        let (ident, ty) = match self {
+            Field::Direct { ident, ty, .. } => (ident, ty),
+            Field::Bit { ident, ty, .. } => (ident, ty),
+        };
+        ident.as_ref().map(|ident| ident.span()).unwrap_or_else(|| ty.span())
+    }
 }
 
 impl TryFrom<syn::Field> for Field {
@@ -54,51 +97,28 @@ impl Field {
         ty: Type,
         parameters: HashMap<Path, Expr>,
     ) -> Result<Field, syn::Error> {
-        let accepted_parameters: HashSet<_> = [
-            path::byte_order(),
-            path::offset(),
-            path::align(),
-            path::round(),
-        ]
-        .into_iter()
-        .collect();
-        for (name, _) in &parameters {
-            if !accepted_parameters.contains(&name) {
-                return Err(syn::Error::new(name.span(), "unrecognized parameter"));
-            }
-        }
+        let accepted_parameters = [
+            &[path::multi_pass(), path::value()] as &[Path],
+            &FieldLayoutProperties::accepted_parameters() as &[Path],
+        ];
+        check_invalid_parameters(&parameters, accepted_parameters.into_iter().flatten())?;
 
-        let byte_order = parameters.get(&path::byte_order()).map(|expr| as_byte_order(expr)).transpose()?;
-        let offset = parameters.get(&path::offset()).map(|expr| as_literal_int(expr)).transpose()?;
-        let align = parameters.get(&path::align()).map(|expr| as_literal_int(expr)).transpose()?;
-        let round = parameters.get(&path::round()).map(|expr| as_literal_int(expr)).transpose()?;
-        Ok(Self::Direct { ident, ty, byte_order, offset, align, round })
+        let multi_pass = parameters.get(&path::multi_pass()).map(as_literal_bool).transpose()?;
+        let transform = parameters.get(&path::value()).map(as_transform).transpose()?.unwrap_or_default();
+        let layout_properties = FieldLayoutProperties::from_parameters(&parameters)?;
+        Ok(Self::Direct { ident, ty, multi_pass, transform, layout_properties })
     }
 
     fn parse_bit_field(ident: Option<Ident>, ty: Type, parameters: HashMap<Path, Expr>) -> Result<Field, syn::Error> {
-        const MISSING_STORAGE_ID: &str =
-            "this bit field is missing the storage identifier, add `bit_field=<IDENTIFIER>` to the attribute";
-        const MISSING_BITS: &str =
-            "this bit field is missing the bit range, add `bits=<S>..<E>` or `bits=<B>` to the attribute";
+        let accepted_parameters = [
+            &[path::bit_range(), path::storage_id(), path::value()] as &[Path],
+            &BitFieldStorageProperties::accepted_parameters() as &[Path],
+            &FieldLayoutProperties::accepted_parameters() as &[Path],
+        ];
+        check_invalid_parameters(&parameters, accepted_parameters.into_iter().flatten())?;
 
-        let accepted_parameters: HashSet<_> = [
-            path::storage_id(),
-            path::storage_ty(),
-            path::byte_order(),
-            path::bit_numbering(),
-            path::bit_range(),
-            path::offset(),
-            path::align(),
-            path::round(),
-        ]
-        .into_iter()
-        .collect();
-        for (name, _) in &parameters {
-            if !accepted_parameters.contains(&name) {
-                return Err(syn::Error::new(name.span(), "unrecognized parameter"));
-            }
-        }
-
+        let multi_pass = parameters.get(&path::multi_pass()).map(as_literal_bool).transpose()?;
+        let transform = parameters.get(&path::value()).map(as_transform).transpose()?.unwrap_or_default();
         let bits = parameters
             .get(&path::bit_range())
             .map(|expr| {
@@ -106,20 +126,63 @@ impl Field {
                     .or(as_literal_int(expr).map(|bit| bit..(bit + 1)))
                     .map_err(|err| syn::Error::new(err.span(), "expected either a literal range or an integer literal"))
             })
-            .ok_or(syn::Error::new(ident.span(), MISSING_BITS))??;
-        let storage_id = parameters
-            .get(&path::storage_id())
-            .map(|expr| as_ident(expr))
-            .ok_or(syn::Error::new(ident.span(), MISSING_STORAGE_ID))??;
-        let storage_ty = parameters.get(&path::storage_ty()).map(|expr| as_type(expr)).transpose()?;
-        let byte_order = parameters.get(&path::byte_order()).map(|expr| as_byte_order(expr)).transpose()?;
-        let bit_numbering = parameters.get(&path::bit_numbering()).map(|expr| as_bit_numbering(expr)).transpose()?;
-        let offset = parameters.get(&path::offset()).map(|expr| as_literal_int(expr)).transpose()?;
-        let align = parameters.get(&path::align()).map(|expr| as_literal_int(expr)).transpose()?;
-        let round = parameters.get(&path::round()).map(|expr| as_literal_int(expr)).transpose()?;
+            .ok_or(syn::Error::new(
+                ident.span(),
+                "this bit field is missing the bit range, add `bits=<S>..<E>` or `bits=<B>` to the attribute",
+            ))??;
+        let storage_ident = parameters.get(&path::storage_id()).map(as_ident).ok_or(syn::Error::new(
+            ident.span(),
+            "this bit field is missing the storage identifier, add `bit_field=<IDENTIFIER>` to the attribute",
+        ))??;
+        let storage_properties = BitFieldStorageProperties::from_parameters(&parameters)?;
+        let layout_properties = FieldLayoutProperties::from_parameters(&parameters)?;
 
-        Ok(Self::Bit { ident, ty, bits, storage_id, storage_ty, byte_order, bit_numbering, offset, align, round })
+        Ok(Self::Bit { ident, ty, multi_pass, transform, bits, storage_ident, storage_properties, layout_properties })
     }
+}
+
+impl FieldLayoutProperties {
+    pub fn from_parameters(parameters: &HashMap<Path, Expr>) -> Result<Self, syn::Error> {
+        let byte_order = parameters.get(&path::byte_order()).map(as_byte_order).transpose()?;
+        let offset = parameters.get(&path::offset()).map(as_literal_int).transpose()?;
+        let align = parameters.get(&path::align()).map(as_literal_int).transpose()?;
+        let round = parameters.get(&path::round()).map(as_literal_int).transpose()?;
+        Ok(Self { byte_order, offset, align, round })
+    }
+
+    pub fn accepted_parameters() -> [Path; 4] {
+        [
+            path::byte_order(),
+            path::offset(),
+            path::align(),
+            path::round(),
+        ]
+    }
+}
+
+impl BitFieldStorageProperties {
+    pub fn from_parameters(parameters: &HashMap<Path, Expr>) -> Result<Self, syn::Error> {
+        let storage_ty = parameters.get(&path::storage_ty()).map(as_type).transpose()?;
+        let bit_numbering = parameters.get(&path::bit_numbering()).map(as_bit_numbering).transpose()?;
+        Ok(Self { storage_ty, bit_numbering })
+    }
+
+    pub fn accepted_parameters() -> [Path; 2] {
+        [path::storage_ty(), path::bit_numbering()]
+    }
+}
+
+fn check_invalid_parameters<'a>(
+    parameters: &HashMap<Path, Expr>,
+    accepted_parameters: impl Iterator<Item = &'a Path>,
+) -> Result<(), syn::Error> {
+    let accepted_parameters: HashSet<_> = accepted_parameters.cloned().collect();
+    for (parameter, _) in parameters {
+        if !accepted_parameters.contains(parameter) {
+            return Err(syn::Error::new(parameter.span(), "parameter is not accepted here"));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -137,10 +200,9 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
-            byte_order: None,
-            offset: None,
-            align: None,
-            round: None,
+            multi_pass: None,
+            transform: Transform::None,
+            layout_properties: Default::default(),
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -155,10 +217,9 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
-            byte_order: None,
-            offset: None,
-            align: None,
-            round: None,
+            multi_pass: None,
+            transform: Transform::None,
+            layout_properties: Default::default(),
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -173,10 +234,14 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
-            byte_order: None,
-            offset: Some(1),
-            align: Some(2),
-            round: Some(3),
+            multi_pass: None,
+            transform: Transform::None,
+            layout_properties: FieldLayoutProperties {
+                byte_order: None,
+                offset: Some(1),
+                align: Some(2),
+                round: Some(3),
+            },
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -193,10 +258,14 @@ mod tests {
         let expected = Field::Direct {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
-            byte_order: None,
-            offset: Some(1),
-            align: Some(2),
-            round: Some(3),
+            multi_pass: None,
+            transform: Transform::None,
+            layout_properties: FieldLayoutProperties {
+                byte_order: None,
+                offset: Some(1),
+                align: Some(2),
+                round: Some(3),
+            },
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -242,14 +311,12 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::None,
             bits: 1..3,
-            storage_id: parse_quote!(_bit_field),
-            storage_ty: None,
-            byte_order: None,
-            bit_numbering: None,
-            offset: None,
-            align: None,
-            round: None,
+            storage_ident: parse_quote!(_bit_field),
+            storage_properties: Default::default(),
+            layout_properties: Default::default(),
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -265,14 +332,12 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::None,
             bits: 1..3,
-            storage_id: parse_quote!(_bit_field),
-            storage_ty: None,
-            byte_order: None,
-            bit_numbering: None,
-            offset: None,
-            align: None,
-            round: None,
+            storage_ident: parse_quote!(_bit_field),
+            storage_properties: Default::default(),
+            layout_properties: Default::default(),
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -288,14 +353,12 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::None,
             bits: 1..3,
-            storage_id: parse_quote!(_bit_field),
-            storage_ty: None,
-            byte_order: None,
-            bit_numbering: None,
-            offset: None,
-            align: None,
-            round: None,
+            storage_ident: parse_quote!(_bit_field),
+            storage_properties: Default::default(),
+            layout_properties: Default::default(),
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -310,14 +373,17 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::None,
             bits: 1..3,
-            storage_id: parse_quote!(_bit_field),
-            storage_ty: None,
-            byte_order: None,
-            bit_numbering: None,
-            offset: Some(1),
-            align: Some(2),
-            round: Some(3),
+            storage_ident: parse_quote!(_bit_field),
+            storage_properties: Default::default(),
+            layout_properties: FieldLayoutProperties {
+                byte_order: None,
+                offset: Some(1),
+                align: Some(2),
+                round: Some(3),
+            },
         };
         assert_eq!(actual.unwrap(), expected);
     }
@@ -335,14 +401,17 @@ mod tests {
         let expected = Field::Bit {
             ident: parse_quote!(field),
             ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::None,
             bits: 1..3,
-            storage_id: parse_quote!(_bit_field),
-            storage_ty: None,
-            byte_order: None,
-            bit_numbering: None,
-            offset: Some(1),
-            align: Some(2),
-            round: Some(3),
+            storage_ident: parse_quote!(_bit_field),
+            storage_properties: Default::default(),
+            layout_properties: FieldLayoutProperties {
+                byte_order: None,
+                offset: Some(1),
+                align: Some(2),
+                round: Some(3),
+            },
         };
         assert_eq!(actual.unwrap(), expected);
     }

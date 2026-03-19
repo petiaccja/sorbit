@@ -1,8 +1,8 @@
 use sorbit::byte_order::ByteOrder;
-use sorbit::error::Error;
+use sorbit::error::{Error, ErrorKind, MessageError as _};
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
-use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Serializer, Span};
+use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, RevisableSerializer, Serialize, Span};
 use sorbit::stream_ser_de::{StreamDeserializer, StreamSerializer};
 use sorbit::unpack_bit_field;
 
@@ -29,20 +29,25 @@ impl IPv4Header {
         core::cmp::min(u8::MAX as u64, section.len()) as u8 / 4
     }
 
-    fn checksum(mut reader: impl Read) -> u16 {
+    fn checksum(mut reader: impl Read) -> Result<u16, Error> {
         let mut checksum = 0u32;
         let mut bytes = [0u8; 2];
-        while let Ok(_) = reader.read(bytes.as_mut_slice()) {
-            let word = u16::from_be_bytes(bytes);
-            checksum += word as u32;
-            checksum = (checksum >> 16) + (checksum & 0xFFFF);
+        loop {
+            match reader.read(bytes.as_mut_slice()) {
+                Ok(_) => {
+                    let word = u16::from_be_bytes(bytes);
+                    checksum += word as u32;
+                    checksum = (checksum >> 16) + (checksum & 0xFFFF);
+                }
+                Err(err) if err.kind() == ErrorKind::UnexpectedEof => break Ok(!(checksum as u16)),
+                Err(err) => break Err(err),
+            }
         }
-        !(checksum as u16)
     }
 }
 
 impl MultiPassSerialize for IPv4Header {
-    fn serialize<S: MultiPassSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+    fn serialize<S: RevisableSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
         let (self_span, (b1_span, checksum_span)) = serializer.with_byte_order(ByteOrder::BigEndian, |s| {
             s.serialize_composite(|s| {
                 let b1_span = 0u8.serialize(s)?; // Version and IHL.
@@ -67,16 +72,17 @@ impl MultiPassSerialize for IPv4Header {
         // Update IHL.
         {
             let ihl = Self::ihl(&self_span);
-            serializer.update_section(&b1_span, |s| {
+            serializer.revise_span(&b1_span, |s| {
                 pack_bit_field!(u8 => {(self.version, 4..8), (ihl, 0..4)}).unwrap().serialize(s)
             })?;
         }
         // Update checksum.
         {
-            let checksum = serializer.analyze_section(&self_span, |reader| Self::checksum(reader))?;
-            serializer.update_section(&checksum_span, |s| {
-                s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s))
+            let checksum = serializer.analyze_span(&self_span, |reader| {
+                Self::checksum(reader).map_err(|_| S::Error::message("computing checksum failed"))
             })?;
+            serializer
+                .revise_span(&checksum_span, |s| s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s)))?;
         }
         Ok(self_span)
     }

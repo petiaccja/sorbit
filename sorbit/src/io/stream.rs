@@ -18,19 +18,6 @@ pub trait Write {
     fn write(&mut self, bytes: &[u8]) -> Result<(), Error>;
 }
 
-/// Enumeration of possible methods to seek within an I/O object.
-///
-/// Use by the [`Seek`] trait. Mimics [`std::io::Seek`], see its documentation
-/// for more information.
-pub enum SeekFrom {
-    /// Seek this many bytes from the beginning of the stream.
-    Start(u64),
-    /// Seek this many bytes from the end of the stream.
-    End(i64),
-    /// Seek this many bytes from the current stream position.
-    Current(i64),
-}
-
 /// The [`Seek`]` trait provides a cursor which can be moved within a stream of bytes.
 ///
 /// This trait is necessary because this crate is `no_std`, but the [`std::io`]
@@ -67,6 +54,41 @@ pub trait Seek {
     fn seek_relative(&mut self, offset: i64) -> Result<(), Error> {
         self.seek(SeekFrom::Current(offset)).map(|_| ())
     }
+}
+
+/// Bounded streams have a fixed length that can be queried.
+///
+/// This trait is somewhat of a subset of the [`Seek`] trait. For bounded
+/// streams, seeking to their end should be successful, and comparing that to
+/// the current stream position, the number of remaining bytes can be
+/// determined. However, not all seekable streams are bounded.
+pub trait Bounded {
+    /// Return whether the stream is at its end.
+    ///
+    /// When the stream is at its end, subsequent reads or writes will result in
+    /// an end of file error.
+    fn is_finished(&self) -> bool {
+        self.remaining_bytes() == 0
+    }
+
+    /// Return the number of bytes that can still be read or written.
+    ///
+    /// When reading or writing exactly this many bytes, the stream will come to
+    /// its end.
+    fn remaining_bytes(&self) -> u64;
+}
+
+/// Enumeration of possible methods to seek within an I/O object.
+///
+/// Use by the [`Seek`] trait. Mimics [`std::io::Seek`], see its documentation
+/// for more information.
+pub enum SeekFrom {
+    /// Seek this many bytes from the beginning of the stream.
+    Start(u64),
+    /// Seek this many bytes from the end of the stream.
+    End(i64),
+    /// Seek this many bytes from the current stream position.
+    Current(i64),
 }
 
 impl SeekFrom {

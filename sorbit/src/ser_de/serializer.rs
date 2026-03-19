@@ -1,7 +1,7 @@
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::TraceError;
-use crate::io::{Read, Seek};
+use crate::error::{MessageError, TraceError};
+use crate::io::Read;
 
 /// The section of the byte stream where a serialized object resides.
 ///
@@ -16,25 +16,13 @@ pub trait Span {
     fn end(&self) -> u64;
 }
 
-/// A helper trait to define the types a [`Serializer`] returns on success
-/// and error.
-pub trait SerializationOutcome {
+/// Serializers can transform primitive types into a stream of bytes that can
+/// be sent over the network or stored in files.
+pub trait Serializer {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
-    type Error: TraceError + From<BitError>;
-}
-
-/// Serializers can transform primitive types into a stream of bytes that can
-/// be sent over the network or stored in files.
-pub trait Serializer: SerializationOutcome {
-    /// The type of the serializer passed to the member serializer in
-    /// [`Serializer::serialize_composite`].
-    type CompositeSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
-
-    /// The type of the serializer passed to the member serializer in
-    /// [`Serializer::with_byte_order`].
-    type ByteOrderSerializer: Serializer<Success = Self::Success, Error = Self::Error>;
+    type Error: TraceError + MessageError + From<BitError>;
 
     /// Serialize a [`bool`] value.
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;
@@ -108,7 +96,7 @@ pub trait Serializer: SerializationOutcome {
     /// A tuple of the [`Span`] of the entire composite and the output of `serialize_members`.
     fn serialize_composite<Output>(
         &mut self,
-        serialize_members: impl FnOnce(&mut Self::CompositeSerializer) -> Result<Output, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<(Self::Success, Output), Self::Error>;
 
     /// Temporarily change the byte order.
@@ -118,7 +106,7 @@ pub trait Serializer: SerializationOutcome {
     fn with_byte_order<Output>(
         &mut self,
         byte_order: ByteOrder,
-        serialize_members: impl FnOnce(&mut Self::ByteOrderSerializer) -> Result<Output, Self::Error>,
+        serialize_members: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
 
     /// Return [`Ok`].
@@ -126,6 +114,12 @@ pub trait Serializer: SerializationOutcome {
     /// Use this to exit serialization with a success when you don't have any
     /// actual values to serialize.
     fn success(&mut self) -> Result<Self::Success, Self::Error>;
+
+    /// Return an error, indicating that serialization failed.
+    ///
+    /// This method can be called by implementors of [`crate::ser_de::Serialize`]
+    /// when an error occurs during serialization.
+    fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error>;
 }
 
 /// A serializer that can analyze and update previously serialized objects.
@@ -133,14 +127,7 @@ pub trait Serializer: SerializationOutcome {
 /// When serializing an object succeeds, revisable serializers always return
 /// a [Span] that contains the location in the stream where the object was
 /// serialized. The span can later be used to analyze and update the stream.
-pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
-    /// The type of the serializer passed to the update function in
-    /// [`RevisableSerializer::update_section`].
-    type SectionSerializer: Serializer + RevisableSerializer<Success = Self::Success, Error = Self::Error>;
-    /// The type of the stream passed to the analyzer function in
-    /// [`RevisableSerializer::analyze_section`].
-    type SectionReader: Read + Seek;
-
+pub trait RevisableSerializer: Serializer<Success: Span> {
     /// Analyze the byte stream of previously serialized items.
     ///
     /// Parameters:
@@ -152,11 +139,14 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// This function can be used to compute checksums or to measure the final
     /// length of a data structure. These calculations cannot easily be done
     /// on the unserialized object as they require the raw bytes.
-    fn analyze_section<Output>(
+    fn analyze_span<Output, Error, AnalyzeSpanFn>(
         &mut self,
-        section: &Self::Success,
-        analyze_bytes: impl FnOnce(&mut Self::SectionReader) -> Output,
-    ) -> Result<Output, Self::Error>;
+        span: &Self::Success,
+        analyze_span_fn: AnalyzeSpanFn,
+    ) -> Result<Output, Self::Error>
+    where
+        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Result<Output, Error>,
+        Error: Into<Self::Error>;
 
     /// Update the bytes belonging to a previously serialized item.
     ///
@@ -169,35 +159,10 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     ///
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
-    /// lengths can be computed by [`RevisableSerializer::analyze_section`].
-    fn update_section<Output>(
+    /// lengths can be computed by [`Self::analyze_span`].
+    fn revise_span<Output>(
         &mut self,
-        section: &Self::Success,
-        update_section: impl FnOnce(&mut Self::SectionSerializer) -> Result<Output, Self::Error>,
+        span: &Self::Success,
+        serialize_span: impl FnOnce(&mut Self) -> Result<Output, Self::Error>,
     ) -> Result<Output, Self::Error>;
-}
-
-/// A multi-pass serializer is a special [`Serializer`] that can look back at the
-/// previously serialized bytes and change them.
-///
-/// Some types cannot be serialized in a single pass. Think about the IHL and
-/// the checksum fields in the IPv4 header. In the first pass, you need to
-/// serialize the header with IHL and checksum set to zero. In the second pass,
-/// you need to look back at the entire serialized header to determine its length
-/// in bytes, and reserialize the IHL accordingly. After this, a third pass is
-/// needed, looking back at the entire byte span of the serialized header to
-/// calculate the checksum, and then the checksum needs to be reserialized.
-///
-/// In addition to the regular [`Serializer`] methods, `MultiPassSerializer`s
-/// also implement [`RevisableSerializer`] so that you can review and update the serialized
-/// byte stream.
-pub trait MultiPassSerializer:
-    Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer> + RevisableSerializer
-{
-}
-
-impl<S> MultiPassSerializer for S where
-    S: Serializer<CompositeSerializer: RevisableSerializer, ByteOrderSerializer: RevisableSerializer>
-        + RevisableSerializer
-{
 }
