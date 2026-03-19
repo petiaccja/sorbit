@@ -1,6 +1,6 @@
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::TraceError;
+use crate::error::{MessageError, TraceError};
 use crate::io::Read;
 
 /// The section of the byte stream where a serialized object resides.
@@ -22,7 +22,7 @@ pub trait SerializationOutcome {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
-    type Error: TraceError + From<BitError>;
+    type Error: TraceError + MessageError + From<BitError>;
 }
 
 /// Serializers can transform primitive types into a stream of bytes that can
@@ -143,13 +143,14 @@ pub trait RevisableSerializer: SerializationOutcome<Success: Span> {
     /// This function can be used to compute checksums or to measure the final
     /// length of a data structure. These calculations cannot easily be done
     /// on the unserialized object as they require the raw bytes.
-    fn analyze_span<Output, AnalyzeSpanFn>(
+    fn analyze_span<Output, Error, AnalyzeSpanFn>(
         &mut self,
         span: &Self::Success,
         analyze_span_fn: AnalyzeSpanFn,
     ) -> Result<Output, Self::Error>
     where
-        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Output;
+        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Result<Output, Error>,
+        Error: Into<Self::Error>;
 
     /// Update the bytes belonging to a previously serialized item.
     ///

@@ -185,13 +185,14 @@ where
         result
     }
 
-    fn analyze_span<Output, AnalyzeSpanFn>(
+    fn analyze_span<Output, Error, AnalyzeSpanFn>(
         &mut self,
         section: &Self::Success,
         analyze_span_fn: AnalyzeSpanFn,
     ) -> Result<Output, Self::Error>
     where
-        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Output,
+        AnalyzeSpanFn: for<'analyze> FnOnce(&mut dyn Read) -> Result<Output, Error>,
+        Error: Into<Self::Error>,
     {
         let range = &section.0;
         let stream_pos = self.stream.stream_position()?;
@@ -199,7 +200,7 @@ where
             StreamSection::new(&mut self.stream, range.clone()).map_err(|_| ErrorKind::UnexpectedEof)?;
         let result = analyze_span_fn(&mut partial_stream);
         self.stream.seek(SeekFrom::Start(stream_pos))?;
-        Ok(result)
+        result.map_err(|err| err.into())
     }
 }
 

@@ -24,7 +24,7 @@ pub enum ErrorKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Error {
     kind: ErrorKind,
-    item: Trace,
+    trace: Trace,
 }
 
 /// The location of the error that occured during serialization.
@@ -47,13 +47,26 @@ pub trait TraceError {
     fn annotate(self, ident: &str) -> Self;
 }
 
+/// Enable errors to contain a custom message.
+pub trait MessageError {
+    /// Create an error with the provided message.
+    fn message(message: &'static str) -> Self;
+}
+
 //------------------------------------------------------------------------------
 // Error implementations
 //------------------------------------------------------------------------------
 
+impl Error {
+    /// Return the kind of the error.
+    pub fn kind(&self) -> ErrorKind {
+        self.kind
+    }
+}
+
 impl From<BitError> for Error {
     fn from(value: BitError) -> Self {
-        Self { kind: ErrorKind::Bit(value), item: Trace::default() }
+        Self { kind: ErrorKind::Bit(value), trace: Trace::default() }
     }
 }
 
@@ -65,7 +78,13 @@ impl TraceError for Error {
 
     #[cfg(feature = "alloc")]
     fn annotate(self, ident: &str) -> Self {
-        Self { kind: self.kind, item: self.item.annotate(ident) }
+        Self { kind: self.kind, trace: self.trace.annotate(ident) }
+    }
+}
+
+impl MessageError for Error {
+    fn message(message: &'static str) -> Self {
+        Self { kind: ErrorKind::Custom(message), trace: Trace::default() }
     }
 }
 
@@ -73,8 +92,8 @@ impl core::error::Error for Error {}
 
 impl core::fmt::Display for Error {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        if !self.item.is_empty() {
-            write!(f, "{}: {}", self.item, self.kind)
+        if !self.trace.is_empty() {
+            write!(f, "{}: {}", self.trace, self.kind)
         } else {
             write!(f, "{}", self.kind)
         }
@@ -83,7 +102,7 @@ impl core::fmt::Display for Error {
 
 impl From<ErrorKind> for Error {
     fn from(value: ErrorKind) -> Self {
-        Self { kind: value, item: Trace::default() }
+        Self { kind: value, trace: Trace::default() }
     }
 }
 

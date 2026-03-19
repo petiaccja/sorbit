@@ -1,5 +1,5 @@
 use sorbit::byte_order::ByteOrder;
-use sorbit::error::Error;
+use sorbit::error::{Error, ErrorKind, MessageError as _};
 use sorbit::io::{FixedMemoryStream, GrowingMemoryStream, Read};
 use sorbit::pack_bit_field;
 use sorbit::ser_de::{Deserialize, Deserializer, MultiPassSerialize, MultiPassSerializer, Serialize, Span};
@@ -29,15 +29,20 @@ impl IPv4Header {
         core::cmp::min(u8::MAX as u64, section.len()) as u8 / 4
     }
 
-    fn checksum(mut reader: impl Read) -> u16 {
+    fn checksum(mut reader: impl Read) -> Result<u16, Error> {
         let mut checksum = 0u32;
         let mut bytes = [0u8; 2];
-        while let Ok(_) = reader.read(bytes.as_mut_slice()) {
-            let word = u16::from_be_bytes(bytes);
-            checksum += word as u32;
-            checksum = (checksum >> 16) + (checksum & 0xFFFF);
+        loop {
+            match reader.read(bytes.as_mut_slice()) {
+                Ok(_) => {
+                    let word = u16::from_be_bytes(bytes);
+                    checksum += word as u32;
+                    checksum = (checksum >> 16) + (checksum & 0xFFFF);
+                }
+                Err(err) if err.kind() == ErrorKind::UnexpectedEof => break Ok(!(checksum as u16)),
+                Err(err) => break Err(err),
+            }
         }
-        !(checksum as u16)
     }
 }
 
@@ -73,7 +78,9 @@ impl MultiPassSerialize for IPv4Header {
         }
         // Update checksum.
         {
-            let checksum = serializer.analyze_span(&self_span, |reader| Self::checksum(reader))?;
+            let checksum = serializer.analyze_span(&self_span, |reader| {
+                Self::checksum(reader).map_err(|_| S::Error::message("computing checksum failed"))
+            })?;
             serializer
                 .revise_span(&checksum_span, |s| s.with_byte_order(ByteOrder::BigEndian, |s| checksum.serialize(s)))?;
         }
