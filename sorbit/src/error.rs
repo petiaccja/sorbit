@@ -73,7 +73,7 @@ impl From<BitError> for Error {
 impl TraceError for Error {
     #[cfg(not(feature = "alloc"))]
     fn annotate(self, ident: &'static str) -> Self {
-        Self { kind: self.kind, item: self.item.annotate(ident) }
+        Self { kind: self.kind, trace: self.trace.annotate(ident) }
     }
 
     #[cfg(feature = "alloc")]
