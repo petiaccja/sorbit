@@ -376,7 +376,7 @@
 //! together with the stream serializers.
 //!
 //! ## Sorbit vs. ...
-//! 
+//!
 //! *To the authors of the libraries mentioned below, please reach out if you
 //! find inaccurate information.*
 //!
@@ -390,7 +390,7 @@
 //! - Sorbit vs [deku](https://docs.rs/deku/0.20.3/deku/index.html): Regarding
 //!   functionality, sorbit and deku are very similar, as they both focus on
 //!   making the serialization of specific binary formats easier.
-//! 
+//!
 //!   So what are the differences then?
 //!   - While deku supports `no_std` environments, sorbit also supports heapless
 //!     environments.
