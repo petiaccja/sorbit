@@ -208,6 +208,7 @@
 //! | `value=len_by(l)`        | The length of this collection is serialized as `self.l`. This is the sibling attribute of `value=len(c)`, and it's enough if you specify only one of them. |
 //! | `value=byte_count(c)`    | The serialized value will be the number of bytes the serialized items of `self.c` occupy altogether. For deserialization, `self.c` has to implement [`FromIterator`]. Using this attribute will make the structure only [`MultiPassSerialize`](crate::ser_de::MultiPassSerialize). |
 //! | `value=byte_count_by(b)` | The number of bytes the serialized items of this field occupy together is serialized as `self.b`. This is the sibling attribute of `value=byte_count(c)`, and it's enough if you specify only one of them. |
+//! | `value=constant(expr)`   | The item's value will always be `expr` when serializing, and deserialization will fail if the value is not `expr`. The `expr` must be convertible to the field's type via [`From`]. |
 //!
 //! #### Bit fields
 //!
