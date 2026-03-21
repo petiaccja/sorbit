@@ -1,17 +1,17 @@
 use std::collections::{HashMap, HashSet};
 
-use syn::{Generics, Ident, Member};
+use syn::{Generics, Ident, Member, parse_quote};
 
 use crate::attribute::{ByteOrder, Transform};
 use crate::ir::{Region, Value};
 use crate::ops::algorithm::{with_maybe_alignment, with_maybe_byte_order, with_maybe_offset};
 use crate::ops::{
-    self, deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, revise_span, self_,
-    serialize_composite, struct_, success, sym, try_, tuple,
+    self, custom_expr, deserialize_composite, destructure, impl_deserialize, impl_serialize, member, ok, revise_span,
+    self_, serialize_composite, struct_, success, sym, try_, tuple,
 };
 use crate::r#struct::ast::conversion::{add_symmetric_transforms, check_transforms};
 use crate::r#struct::ast::field::BitFieldMember;
-use crate::utility::{ident_to_type, member_to_ident};
+use crate::utility::{PhantomType, ident_to_type, member_to_ident};
 
 use super::super::parse;
 use super::conversion::to_layout_fields;
@@ -141,10 +141,10 @@ impl Struct {
                 let mut field_tys = HashMap::new();
                 self.fields.iter().for_each(|field| match field {
                     Field::Direct { member, ty, .. } => {
-                        let _ = field_tys.insert(member, ty);
+                        let _ = field_tys.insert(member, ty.phantom_underlying_type());
                     }
                     Field::Bit { members, .. } => members.iter().for_each(|member| {
-                        let _ = field_tys.insert(&member.member, &member.ty);
+                        let _ = field_tys.insert(&member.member, member.ty.phantom_underlying_type());
                     }),
                 });
 
@@ -202,10 +202,18 @@ impl Struct {
                         .iter()
                         .map(|field| {
                             let results = field.to_deserialize_op(region, deserializer);
-                            let members = field.members();
                             let values: Vec<_> = results.iter().map(|result| try_(region, *result)).collect();
-                            std::iter::zip(members, &values)
+                            std::iter::zip(field.members(), &values)
                                 .for_each(|(member, value)| sym(region, *value, member_to_ident(member.clone())));
+                            let values: Vec<_> = std::iter::zip(field.types(), values)
+                                .map(|(ty, value)| {
+                                    if ty.is_phantom() {
+                                        custom_expr(region, parse_quote!(PhantomData))
+                                    } else {
+                                        value
+                                    }
+                                })
+                                .collect();
                             values
                         })
                         .flatten()

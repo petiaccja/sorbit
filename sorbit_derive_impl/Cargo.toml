@@ -16,3 +16,4 @@ syn.workspace = true
 itertools.workspace = true
 petgraph.workspace = true
 textwrap.workspace = true
+rstest.workspace = true

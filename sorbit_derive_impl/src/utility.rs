@@ -1,6 +1,6 @@
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::parse_quote;
+use syn::{GenericArgument, PathArguments, PathSegment, TypePath, parse_quote};
 
 /// Convert a type which is single ident into an actual type.
 pub fn ident_to_type(ident: syn::Ident) -> syn::Type {
@@ -33,4 +33,94 @@ pub fn deconstruct_pattern<'a>(struct_ty: &syn::Type, members: impl Iterator<Ite
         }
     });
     parse_quote!(#struct_ty{ #(#members),* })
+}
+
+pub trait PhantomType {
+    fn is_phantom(&self) -> bool;
+    fn phantom_underlying_type(&self) -> &syn::Type;
+}
+
+impl PhantomType for syn::Type {
+    fn is_phantom(&self) -> bool {
+        match self {
+            syn::Type::Path(TypePath { qself: _, path }) => {
+                let mut rev_segments = path.segments.iter().rev();
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "PhantomData" => (),
+                    _ => return false,
+                };
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "marker" => (),
+                    None if path.leading_colon.is_none() => (),
+                    _ => return false,
+                };
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "std" || segment.ident == "core" => (),
+                    None if path.leading_colon.is_none() => (),
+                    _ => return false,
+                };
+                !path.segments.is_empty()
+            }
+            _ => false,
+        }
+    }
+
+    fn phantom_underlying_type(&self) -> &syn::Type {
+        match self {
+            syn::Type::Path(TypePath { qself: _, path }) => {
+                let mut rev_segments = path.segments.iter().rev();
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "PhantomData" => (),
+                    _ => return self,
+                };
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "marker" => (),
+                    None if path.leading_colon.is_none() => (),
+                    _ => return self,
+                };
+                match rev_segments.next() {
+                    Some(segment) if segment.ident == "std" || segment.ident == "core" => (),
+                    None if path.leading_colon.is_none() => (),
+                    _ => return self,
+                };
+                if let Some(PathSegment { arguments: PathArguments::AngleBracketed(args), .. }) = path.segments.last() {
+                    if let (Some(GenericArgument::Type(ty)), 1) = (args.args.first(), args.args.len()) {
+                        return ty;
+                    }
+                };
+                self
+            }
+            _ => self,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quote::ToTokens;
+    use rstest::rstest;
+    use syn::Type;
+
+    use super::*;
+
+    #[rstest]
+    #[case(parse_quote!(u8), parse_quote!(u8), false)]
+    #[case(parse_quote!(PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(marker::PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(std::marker::PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(core::marker::PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(::std::marker::PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(::core::marker::PhantomData<u8>), parse_quote!(u8), true)]
+    #[case(parse_quote!(::marker::PhantomData<u8>), parse_quote!(::marker::PhantomData<u8>), false)]
+    #[case(parse_quote!(special::PhantomData<u8>), parse_quote!(special::PhantomData<u8>), false)]
+    #[case(parse_quote!(::special::PhantomData<u8>), parse_quote!(::special::PhantomData<u8>), false)]
+    #[case(parse_quote!(special::marker::PhantomData<u8>), parse_quote!(special::marker::PhantomData<u8>), false)]
+    #[case(parse_quote!(::special::marker::PhantomData<u8>), parse_quote!(::special::marker::PhantomData<u8>), false)]
+    fn phantom_type(#[case] ty: Type, #[case] underlying_ty: Type, #[case] is_phantom: bool) {
+        assert_eq!(
+            ty.phantom_underlying_type().to_token_stream().to_string(),
+            underlying_ty.to_token_stream().to_string()
+        );
+        assert_eq!(ty.is_phantom(), is_phantom);
+    }
 }
