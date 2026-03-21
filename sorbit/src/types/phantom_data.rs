@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use crate::ser_de::{Deserialize, Serialize};
 
@@ -16,7 +16,7 @@ impl<T> Deserialize for PhantomData<T> {
 
 #[cfg(test)]
 mod tests {
-    use std::marker::PhantomData;
+    use core::marker::PhantomData;
 
     use crate::ser_de::{FromBytes as _, ToBytes as _};
 
