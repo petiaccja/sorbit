@@ -36,6 +36,7 @@ pub fn add_symmetric_transforms(mut fields: Vec<parse::Field>) -> Result<Vec<par
             ByteCount(member) => (find_pair(member)?, true, ByteCountBy(members[field_idx].clone())),
             LengthBy(member) => (find_pair(member)?, false, Length(members[field_idx].clone())),
             ByteCountBy(member) => (find_pair(member)?, false, ByteCount(members[field_idx].clone())),
+            Transform::Constant(_) => continue,
         };
 
         if pair_follows && !(field_idx < pair_idx) {

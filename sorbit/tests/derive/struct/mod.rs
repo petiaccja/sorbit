@@ -2,6 +2,7 @@ mod bit_fields;
 mod bit_numbering;
 mod collection_by_byte_count;
 mod collection_by_length;
+mod constant_field;
 mod empty;
 mod field_byte_order;
 mod field_layout;

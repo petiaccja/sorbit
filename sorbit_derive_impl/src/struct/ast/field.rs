@@ -11,8 +11,8 @@ use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
 use crate::ops::constants::BIT_FIELD_TYPE;
 use crate::ops::{
-    deserialize_items_by_byte_count, deserialize_items_by_len, deserialize_object, empty_bit_field, items, len,
-    pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
+    check_eq, custom_expr, deserialize_items_by_byte_count, deserialize_items_by_len, deserialize_object,
+    empty_bit_field, items, len, ok, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
 use crate::r#struct::parse::FieldLayoutProperties;
 use crate::utility::member_to_ident;
@@ -117,6 +117,13 @@ impl ToDeserializeOp for Field {
                             let byte_count = symref(region, member_to_ident(byte_count_by.clone()));
                             deserialize_items_by_byte_count(region, de, byte_count, ty.clone())
                         }
+                        Transform::Constant(expr) => {
+                            let result = deserialize_object(region, de, ty.clone());
+                            let value = try_(region, result);
+                            let expected = custom_expr(region, expr.clone());
+                            check_eq(region, deserializer, value, expected);
+                            ok(region, value)
+                        }
                     });
                 vec![result]
             }
@@ -183,6 +190,10 @@ pub fn serialize_transform(
             // Items without the length.
             let items = items(region, value);
             ref_(region, items)
+        }
+        Transform::Constant(expr) => {
+            let value = custom_expr(region, parse_quote!( #ty::from(#expr) ));
+            ref_(region, value)
         }
     }
 }
