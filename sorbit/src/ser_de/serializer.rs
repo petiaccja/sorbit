@@ -39,6 +39,9 @@ pub trait Serializer {
     /// Serialize an [`u64`] value according to the current byte order.
     fn serialize_u64(&mut self, value: u64) -> Result<Self::Success, Self::Error>;
 
+    /// Serialize an [`u128`] value according to the current byte order.
+    fn serialize_u128(&mut self, value: u128) -> Result<Self::Success, Self::Error>;
+
     /// Serialize an [`i8`] value.
     fn serialize_i8(&mut self, value: i8) -> Result<Self::Success, Self::Error>;
 
@@ -50,6 +53,9 @@ pub trait Serializer {
 
     /// Serialize an [`i64`] value according to the current byte order.
     fn serialize_i64(&mut self, value: i64) -> Result<Self::Success, Self::Error>;
+
+    /// Serialize an [`i128`] value according to the current byte order.
+    fn serialize_i128(&mut self, value: i128) -> Result<Self::Success, Self::Error>;
 
     /// Serialize an [`u8`] array.
     ///

@@ -110,6 +110,10 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         self.write(&to_xe_bytes!(value, self.context.byte_order()))
     }
 
+    fn serialize_u128(&mut self, value: u128) -> Result<Self::Success, Self::Error> {
+        self.write(&to_xe_bytes!(value, self.context.byte_order()))
+    }
+
     fn serialize_i8(&mut self, value: i8) -> Result<Self::Success, Self::Error> {
         self.write(&to_xe_bytes!(value, self.context.byte_order()))
     }
@@ -123,6 +127,10 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     }
 
     fn serialize_i64(&mut self, value: i64) -> Result<Self::Success, Self::Error> {
+        self.write(&to_xe_bytes!(value, self.context.byte_order()))
+    }
+
+    fn serialize_i128(&mut self, value: i128) -> Result<Self::Success, Self::Error> {
         self.write(&to_xe_bytes!(value, self.context.byte_order()))
     }
 
@@ -275,6 +283,19 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn serialize_u128_be() -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::BigEndian);
+        s.serialize_u128(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAF)?;
+        assert_eq!(
+            s.take().take(),
+            vec![
+                0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF, 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF
+            ]
+        );
+        Ok(())
+    }
+
     //--------------------------------------------------------------------------
     // i* be
     //--------------------------------------------------------------------------
@@ -307,6 +328,19 @@ mod tests {
         let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::BigEndian);
         s.serialize_i64(0xDEADBEEF_FEEDDEAF_u64.cast_signed())?;
         assert_eq!(s.take().take(), vec![0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i128_be() -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::BigEndian);
+        s.serialize_i128(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAFu128.cast_signed())?;
+        assert_eq!(
+            s.take().take(),
+            vec![
+                0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF, 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF
+            ]
+        );
         Ok(())
     }
 
@@ -345,6 +379,19 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn serialize_u128_le() -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::LittleEndian);
+        s.serialize_u128(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAF)?;
+        assert_eq!(
+            s.take().take(),
+            vec![
+                0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE, 0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE
+            ]
+        );
+        Ok(())
+    }
+
     //--------------------------------------------------------------------------
     // i* le
     //--------------------------------------------------------------------------
@@ -377,6 +424,19 @@ mod tests {
         let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::LittleEndian);
         s.serialize_i64(0xDEADBEEF_FEEDDEAF_u64.cast_signed())?;
         assert_eq!(s.take().take(), vec![0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE]);
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_i128_le() -> Result<(), Error> {
+        let mut s = StreamSerializer::new(GrowingMemoryStream::new()).change_byte_order(ByteOrder::LittleEndian);
+        s.serialize_i128(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAFu128.cast_signed())?;
+        assert_eq!(
+            s.take().take(),
+            vec![
+                0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE, 0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE
+            ]
+        );
         Ok(())
     }
 
