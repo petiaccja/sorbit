@@ -377,18 +377,25 @@
 //!
 //! ## Sorbit vs. ...
 //!
+//! *To the authors of the libraries mentioned below, please reach out if you
+//! find inaccurate information.*
+//!
 //! - Sorbit vs [serde](https://docs.rs/serde/latest/serde/): Serde is a general
 //!   serialization framework, excelling at handling all sorts of text formats
 //!   (e.g. JSON, YAML) and efficient binary formats (e.g. [postcard](https://docs.rs/postcard/latest/postcard/)).
 //!   Sorbit, on the other hand, is tailored to define specific binary formats,
-//!   which is less convenient, if at all possible, with serde.
-//! - Sorbit vs [deku](https://docs.rs/deku/0.20.3/deku/index.html): Sorbit and
-//!   deku serve the same purpose: defining specific binary layouts. They have a
-//!   similar feature set, but a different API and design. Choose whichever fits
-//!   your needs best.
-//!   - Why another framework? Well, when I first looked at deku I thought it
-//!     couldn't do what I wanted. I was wrong, but here we are...
-//!   
+//!   which is less convenient, if at all possible, with serde. While sorbit is
+//!   also very efficient, crates like serde provide way more options together
+//!   with a first-class support for textual formats.
+//! - Sorbit vs [deku](https://docs.rs/deku/0.20.3/deku/index.html): Regarding
+//!   functionality, sorbit and deku are very similar, as they both focus on
+//!   making the serialization of specific binary formats easier.
+//!
+//!   So what are the differences then?
+//!   - While deku supports `no_std` environments, sorbit also supports heapless
+//!     environments.
+//!   - The APIs look and feel different. You should take a look at both before
+//!     making your mind up.
 
 // Disable the [`std`] standard crate when the "std" feature is not enabled.
 #![cfg_attr(not(feature = "std"), no_std)]
