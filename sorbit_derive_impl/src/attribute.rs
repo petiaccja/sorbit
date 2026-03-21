@@ -42,6 +42,8 @@ pub enum Transform {
     /// Set the byte count of this field as the value given by another field.
     /// This field should be a sequential collection.
     ByteCountBy(Member),
+    /// The value of this field will always be this constant when serialized.
+    Constant(syn::Expr),
 }
 
 impl std::fmt::Display for Transform {
@@ -52,6 +54,7 @@ impl std::fmt::Display for Transform {
             Transform::ByteCount(member) => write!(f, "byte_count({})", member.to_token_stream()),
             Transform::LengthBy(member) => write!(f, "len_by({})", member.to_token_stream()),
             Transform::ByteCountBy(member) => write!(f, "byte_count_by({})", member.to_token_stream()),
+            Transform::Constant(expr) => write!(f, "constant({})", expr.to_token_stream()),
         }
     }
 }
@@ -177,6 +180,16 @@ pub fn as_ident(expr: &Expr) -> Result<Ident, syn::Error> {
     }
 }
 
+pub fn as_member(expr: &Expr) -> Result<Member, syn::Error> {
+    const MESSAGE: &str = "expected an identifier or an integer literal";
+    let error = || syn::Error::new(expr.span(), MESSAGE);
+    match expr {
+        Expr::Path(field) => Ok(Member::from(field.path.get_ident().ok_or_else(error)?.clone())),
+        Expr::Lit(ExprLit { lit: Lit::Int(index), .. }) => Ok(Member::from(index.base10_parse::<usize>()?)),
+        _ => return Err(error()),
+    }
+}
+
 pub fn as_type(expr: &Expr) -> Result<Type, syn::Error> {
     match expr {
         Expr::Path(path) => Ok(Type::from(TypePath { qself: None, path: path.path.clone() })),
@@ -250,36 +263,45 @@ impl std::fmt::Display for ByteOrder {
 }
 
 pub fn as_transform(expr: &Expr) -> Result<Transform, syn::Error> {
-    const MESSAGE: &str = "must be either `same`, `len(<IDENT/U32>)`, or `byte_count(<IDENT/U32>)`";
-    let error = || syn::Error::new(expr.span(), MESSAGE);
+    const MESSAGE: &str =
+        "expected `same` or a function call to `len`, `byte_count`, `len_by`, `byte_count_by`, or `constant`";
     match expr {
-        Expr::Path(path) => (path == &parse_quote!(same)).then_some(Transform::None).ok_or_else(error),
+        Expr::Path(path) => (path == &parse_quote!(same))
+            .then_some(Transform::None)
+            .ok_or_else(|| syn::Error::new(path.span(), MESSAGE)),
         Expr::Call(ExprCall { func, args, .. }) => {
-            if args.len() != 1 {
-                return Err(error());
-            };
             let Expr::Path(func) = func.as_ref() else {
-                return Err(error());
+                return Err(syn::Error::new(func.span(), MESSAGE));
             };
-            let field = match args.first() {
-                Some(Expr::Path(field)) => Member::from(field.path.get_ident().ok_or_else(error)?.clone()),
-                Some(Expr::Lit(ExprLit { lit: Lit::Int(index), .. })) => Member::from(index.base10_parse::<usize>()?),
-                _ => return Err(error()),
+
+            let get_single_arg = || {
+                if args.len() != 1 {
+                    Err(syn::Error::new(args.span(), "expected exactly 1 argument"))
+                } else {
+                    Ok(&args[0])
+                }
             };
 
             if func == &parse_quote!(len) {
-                Ok(Transform::Length(field.clone()))
+                let field = as_member(get_single_arg()?)?;
+                Ok(Transform::Length(field))
             } else if func == &parse_quote!(byte_count) {
-                Ok(Transform::ByteCount(field.clone()))
+                let field = as_member(get_single_arg()?)?;
+                Ok(Transform::ByteCount(field))
             } else if func == &parse_quote!(len_by) {
-                Ok(Transform::LengthBy(field.clone()))
+                let field = as_member(get_single_arg()?)?;
+                Ok(Transform::LengthBy(field))
             } else if func == &parse_quote!(byte_count_by) {
-                Ok(Transform::ByteCountBy(field.clone()))
+                let field = as_member(get_single_arg()?)?;
+                Ok(Transform::ByteCountBy(field))
+            } else if func == &parse_quote!(constant) {
+                let expr = get_single_arg()?;
+                Ok(Transform::Constant(expr.clone()))
             } else {
-                Err(error())
+                Err(syn::Error::new(func.span(), MESSAGE))
             }
         }
-        _ => Err(error()),
+        _ => Err(syn::Error::new(expr.span(), MESSAGE)),
     }
 }
 

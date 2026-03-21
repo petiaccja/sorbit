@@ -54,6 +54,34 @@ impl ToTokens for ErrorOp {
 }
 
 //------------------------------------------------------------------------------
+// Error
+//------------------------------------------------------------------------------
+
+op!(
+    name: "check_eq",
+    builder: check_eq,
+    op: CheckEqOp,
+    inputs: {deserializer, lhs, rhs},
+    outputs: {},
+    attributes: {},
+    regions: {},
+    terminator: false
+);
+
+impl ToTokens for CheckEqOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let deserializer = &self.deserializer;
+        let lhs = &self.lhs;
+        let rhs = &self.rhs;
+        tokens.extend(quote! {
+            if #lhs != #rhs {
+                let _ = #DESERIALIZER_TRAIT::error(#deserializer, "value are not equal")?;
+            };
+        })
+    }
+}
+
+//------------------------------------------------------------------------------
 // Pad
 //------------------------------------------------------------------------------
 
