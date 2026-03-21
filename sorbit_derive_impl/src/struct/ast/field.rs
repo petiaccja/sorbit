@@ -609,4 +609,144 @@ mod tests {
         ";
         assert_matches!(op, pattern);
     }
+
+    #[test]
+    fn to_serialize_op_transform_len() {
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::Length(parse_quote!(bar)),
+            layout_properties: Default::default(),
+        };
+
+        let se = Value::new();
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, (se, true));
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            %foo = symref [foo]
+            %bar = symref [bar]
+            %len_result = len [u8] %serializer %bar
+            %len = try %len_result
+            %len_ref = ref %len
+            %res = serialize_object [false] %serializer, %len_ref
+            yield %res
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_serialize_op_transform_byte_count() {
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::ByteCount(parse_quote!(bar)),
+            layout_properties: Default::default(),
+        };
+
+        let se = Value::new();
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, (se, true));
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            %foo = symref [foo]
+            %res = serialize_object [false] %serializer, %foo
+            yield %res
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_serialize_op_transform_len_by() {
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::LengthBy(parse_quote!(bar)),
+            layout_properties: Default::default(),
+        };
+
+        let se = Value::new();
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, (se, true));
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            %foo = symref [foo]
+            %items = items %foo
+            %items_ref = ref %items
+            %res = serialize_object [false] %serializer, %items_ref
+            yield %res
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_serialize_op_transform_byte_count_by() {
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(u8),
+            multi_pass: None,
+            transform: Transform::ByteCountBy(parse_quote!(bar)),
+            layout_properties: Default::default(),
+        };
+
+        let se = Value::new();
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, (se, true));
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            %foo = symref [foo]
+            %items = items %foo
+            %items_ref = ref %items
+            %res = serialize_object [false] %serializer, %items_ref
+            yield %res
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
+
+    #[test]
+    fn to_serialize_op_transform_len_by_multi_pass() {
+        let input = Field::Direct {
+            member: parse_quote!(foo),
+            ty: parse_quote!(u8),
+            multi_pass: Some(true),
+            transform: Transform::ByteCountBy(parse_quote!(bar)),
+            layout_properties: Default::default(),
+        };
+
+        let se = Value::new();
+        let mut region = Region::new(0);
+        let results = input.to_serialize_op(&mut region, (se, true));
+        yield_(&mut region, results);
+        let op = format!("{:#}", region);
+
+        let pattern = "
+        {
+            %foo = symref [foo]
+            %items = items %foo
+            %items_ref = ref %items
+            %res = serialize_object [true] %serializer, %items_ref
+            yield %res
+        }
+        ";
+        assert_matches!(op, pattern);
+    }
 }

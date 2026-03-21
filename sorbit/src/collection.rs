@@ -1,6 +1,6 @@
 //! Utilities for serializing collections, like `Vec`.
 
-use crate::ser_de::{Deserialize, Deserializer, Serialize, Serializer, Span};
+use crate::ser_de::{Deserialize, Deserializer, MultiPassSerialize, RevisableSerializer, Serialize, Serializer, Span};
 
 /// Return the length of a collection as a specific (integer) type.
 ///
@@ -106,6 +106,23 @@ where
 {
     /// Serialize the items of the collection, but **not** its length.
     fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+        serializer
+            .serialize_composite(|serializer| {
+                for item in self.collection {
+                    item.serialize(serializer)?;
+                }
+                serializer.success()
+            })
+            .map(|(composite_span, _)| composite_span)
+    }
+}
+
+impl<'collection, Collection> MultiPassSerialize for Items<'collection, Collection>
+where
+    for<'a> &'a Collection: IntoIterator<Item: MultiPassSerialize>,
+{
+    /// Serialize the items of the collection, but **not** its length.
+    fn serialize<S: RevisableSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
         serializer
             .serialize_composite(|serializer| {
                 for item in self.collection {
