@@ -101,6 +101,10 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
         Ok(from_xe_bytes!(u64, self.read_fixed()?, self.context.byte_order()))
     }
 
+    fn deserialize_u128(&mut self) -> Result<u128, Self::Error> {
+        Ok(from_xe_bytes!(u128, self.read_fixed()?, self.context.byte_order()))
+    }
+
     fn deserialize_i8(&mut self) -> Result<i8, Self::Error> {
         Ok(from_xe_bytes!(i8, self.read_fixed()?, self.context.byte_order()))
     }
@@ -115,6 +119,10 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
 
     fn deserialize_i64(&mut self) -> Result<i64, Self::Error> {
         Ok(from_xe_bytes!(i64, self.read_fixed()?, self.context.byte_order()))
+    }
+
+    fn deserialize_i128(&mut self) -> Result<i128, Self::Error> {
+        Ok(from_xe_bytes!(i128, self.read_fixed()?, self.context.byte_order()))
     }
 
     fn deserialize_array<const N: usize>(&mut self) -> Result<[u8; N], Self::Error> {
@@ -225,6 +233,15 @@ mod tests {
         assert_eq!(s.deserialize_u64(), Ok(0xDEADBEEF_FEEDDEAF));
     }
 
+    #[test]
+    fn deserialize_u128_be() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([
+            0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF, 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF,
+        ]))
+        .change_byte_order(ByteOrder::BigEndian);
+        assert_eq!(s.deserialize_u128(), Ok(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAF));
+    }
+
     //--------------------------------------------------------------------------
     // i* be
     //--------------------------------------------------------------------------
@@ -253,6 +270,15 @@ mod tests {
         let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF]))
             .change_byte_order(ByteOrder::BigEndian);
         assert_eq!(s.deserialize_i64(), Ok(0xDEADBEEF_FEEDDEAF_u64.cast_signed()));
+    }
+
+    #[test]
+    fn deserialize_i128_be() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([
+            0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF, 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED, 0xDE, 0xAF,
+        ]))
+        .change_byte_order(ByteOrder::BigEndian);
+        assert_eq!(s.deserialize_i128(), Ok(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAF_u128.cast_signed()));
     }
 
     //--------------------------------------------------------------------------
@@ -285,6 +311,15 @@ mod tests {
         assert_eq!(s.deserialize_u64(), Ok(0xDEADBEEF_FEEDDEAF));
     }
 
+    #[test]
+    fn deserialize_u128_le() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([
+            0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE, 0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE,
+        ]))
+        .change_byte_order(ByteOrder::LittleEndian);
+        assert_eq!(s.deserialize_u128(), Ok(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAF));
+    }
+
     //--------------------------------------------------------------------------
     // i* le
     //--------------------------------------------------------------------------
@@ -313,6 +348,15 @@ mod tests {
         let mut s = StreamDeserializer::new(FixedMemoryStream::new([0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE]))
             .change_byte_order(ByteOrder::LittleEndian);
         assert_eq!(s.deserialize_i64(), Ok(0xDEADBEEF_FEEDDEAF_u64.cast_signed()));
+    }
+
+    #[test]
+    fn deserialize_i128_le() {
+        let mut s = StreamDeserializer::new(FixedMemoryStream::new([
+            0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE, 0xAF, 0xDE, 0xED, 0xFE, 0xEF, 0xBE, 0xAD, 0xDE,
+        ]))
+        .change_byte_order(ByteOrder::LittleEndian);
+        assert_eq!(s.deserialize_i128(), Ok(0xDEADBEEF_FEEDDEAF_DEADBEEF_FEEDDEAFu128.cast_signed()));
     }
 
     //--------------------------------------------------------------------------

@@ -15,7 +15,7 @@ use crate::ops::{
     empty_bit_field, items, len, ok, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
 use crate::r#struct::parse::FieldLayoutProperties;
-use crate::utility::member_to_ident;
+use crate::utility::{PhantomType, member_to_ident};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BitFieldMember {
@@ -58,6 +58,13 @@ impl Field {
         match self {
             Field::Direct { member, .. } => vec![member],
             Field::Bit { members, .. } => members.iter().map(|member| &member.member).collect(),
+        }
+    }
+
+    pub fn types(&self) -> Vec<&Type> {
+        match self {
+            Field::Direct { ty, .. } => vec![ty],
+            Field::Bit { members, .. } => members.iter().map(|member| &member.ty).collect(),
         }
     }
 }
@@ -107,8 +114,8 @@ impl ToDeserializeOp for Field {
                 let result =
                     with_layout(region, deserializer, false, layout_properties, |region, de| match transform {
                         Transform::None => deserialize_object(region, de, ty.clone()),
-                        Transform::Length(_) => deserialize_object(region, de, ty.clone()),
-                        Transform::ByteCount(_) => deserialize_object(region, de, ty.clone()),
+                        Transform::Length(_) => deserialize_object(region, de, ty.phantom_underlying_type().clone()),
+                        Transform::ByteCount(_) => deserialize_object(region, de, ty.phantom_underlying_type().clone()),
                         Transform::LengthBy(len_by) => {
                             let len = symref(region, member_to_ident(len_by.clone()));
                             deserialize_items_by_len(region, de, len, ty.clone())
@@ -118,7 +125,7 @@ impl ToDeserializeOp for Field {
                             deserialize_items_by_byte_count(region, de, byte_count, ty.clone())
                         }
                         Transform::Constant(expr) => {
-                            let result = deserialize_object(region, de, ty.clone());
+                            let result = deserialize_object(region, de, ty.phantom_underlying_type().clone());
                             let value = try_(region, result);
                             let expected = custom_expr(region, expr.clone());
                             check_eq(region, deserializer, value, expected);
@@ -136,7 +143,13 @@ impl ToDeserializeOp for Field {
                 let unpacked = members
                     .iter()
                     .map(|BitFieldMember { ty, bits, .. }| {
-                        unpack_bit_field(region, bit_field, ty.clone(), bits.clone(), *bit_numbering)
+                        unpack_bit_field(
+                            region,
+                            bit_field,
+                            ty.phantom_underlying_type().clone(),
+                            bits.clone(),
+                            *bit_numbering,
+                        )
                     })
                     .collect();
 
@@ -175,12 +188,21 @@ pub fn serialize_transform(
         Transform::None => value,
         Transform::Length(member) => {
             // Get the length of the collection referred to by `member`.
+            let ty = ty.phantom_underlying_type();
             let pair = symref(region, member_to_ident(member.clone()));
             let result_len = len(region, serializer, pair, ty.clone());
             let len = try_(region, result_len);
             ref_(region, len)
         }
-        Transform::ByteCount(_member) => value, // Needs to be updated in a second pass.
+        Transform::ByteCount(_member) => {
+            if ty.is_phantom() {
+                let ty = ty.phantom_underlying_type();
+                let zero = custom_expr(region, parse_quote!( <#ty>::from(0) ));
+                ref_(region, zero)
+            } else {
+                value
+            }
+        }
         Transform::LengthBy(_member) => {
             // Items without the length.
             let items = items(region, value);
@@ -192,7 +214,8 @@ pub fn serialize_transform(
             ref_(region, items)
         }
         Transform::Constant(expr) => {
-            let value = custom_expr(region, parse_quote!( #ty::from(#expr) ));
+            let ty = ty.phantom_underlying_type();
+            let value = custom_expr(region, parse_quote!( <#ty>::from(#expr) ));
             ref_(region, value)
         }
     }

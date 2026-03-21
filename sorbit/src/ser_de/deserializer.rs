@@ -23,6 +23,9 @@ pub trait Deserializer: Sized {
     /// Deserialize a [`u64`] value according the current byte order.
     fn deserialize_u64(&mut self) -> Result<u64, Self::Error>;
 
+    /// Deserialize a [`u128`] value according the current byte order.
+    fn deserialize_u128(&mut self) -> Result<u128, Self::Error>;
+
     /// Deserialize a [`i8`] value.
     fn deserialize_i8(&mut self) -> Result<i8, Self::Error>;
 
@@ -34,6 +37,9 @@ pub trait Deserializer: Sized {
 
     /// Deserialize a [`i64`] value according the current byte order.
     fn deserialize_i64(&mut self) -> Result<i64, Self::Error>;
+
+    /// Deserialize a [`i128`] value according the current byte order.
+    fn deserialize_i128(&mut self) -> Result<i128, Self::Error>;
 
     /// Deserialize a [`u8`] array.
     ///
