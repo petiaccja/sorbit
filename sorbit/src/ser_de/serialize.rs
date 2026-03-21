@@ -38,8 +38,8 @@ impl<T: Serialize> Serialize for &T {
 }
 
 /// Blanket implementation of multi-pass serialize for references.
-impl<T: Serialize> MultiPassSerialize for &T {
-    fn serialize<S: Serializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
+impl<T: MultiPassSerialize> MultiPassSerialize for &T {
+    fn serialize<S: RevisableSerializer>(&self, serializer: &mut S) -> Result<S::Success, S::Error> {
         (*self).serialize(serializer)
     }
 }
