@@ -252,7 +252,7 @@
 //! # use sorbit::{Serialize, Deserialize};
 //! #
 //! #[derive(Serialize, Deserialize)]
-//! struct Rust {
+//! struct Binary {
 //!     #[sorbit(byte_order=little_endian)]
 //!     _bit_field: u16,
 //! }
@@ -272,6 +272,28 @@
 //! they are linked by the [`bit::PackInto`] and [`bit::UnpackFrom`] traits.
 //! As long as these traits are implement for the member-storage type pair,
 //! the serialization can be derived.
+//!
+//! #### Phantom fields
+//!
+//! You can use [`PhantomData<T>`](std::marker::PhantomData) for any field or
+//! computed bit field member of the struct. When no value-altering attributes
+//! (e.g. `value=constant(0)`) are present, the phantom field will not be
+//! serialized. When the value is computed by an attribute, the computed value
+//! will be serialized as usual.
+//!
+//! The main use case of phantom fields is to ignore computed fields at runtime:
+//!
+//! ```
+//! # use sorbit::{Serialize, Deserialize};
+//! # use std::marker::PhantomData;
+//! #
+//! #[derive(Serialize, Deserialize)]
+//! struct Collection {
+//!     #[sorbit(value=len(data))]
+//!     length: PhantomData<u16>,
+//!     data: Vec<u8>,
+//! }
+//! ```
 //!
 //! ### Enumerations
 //!
