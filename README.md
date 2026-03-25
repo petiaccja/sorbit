@@ -3,6 +3,7 @@
 ![Language](https://img.shields.io/badge/Language-Rust-blue)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 [![Build & test](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml)
+[![Crates.io Version](https://img.shields.io/crates/v/sorbit)](https://crates.io/crates/sorbit)
 
 *Notice: the API is not yet stable.*
 
