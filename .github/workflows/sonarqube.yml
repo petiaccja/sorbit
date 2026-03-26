@@ -24,7 +24,7 @@ jobs:
           cargo install cargo-tarpaulin
 
       - name: Code coverage
-        run: cargo tarpaulin --engine llvm --test --workspace --out Xml
+        run: cargo tarpaulin --engine llvm --test --workspace --out Xml --output-dir target
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@v6
