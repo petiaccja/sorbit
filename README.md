@@ -1,8 +1,11 @@
 # Sorbit
 
-![Language](https://img.shields.io/badge/Language-Rust-blue)
-![License](https://img.shields.io/badge/License-MIT-blue)
+![Language](https://img.shields.io/badge/language-Rust-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 [![Build & test](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml/badge.svg)](https://github.com/petiaccja/sorbit/actions/workflows/build_and_test.yml)
+[![Crates.io](https://img.shields.io/crates/v/sorbit)](https://crates.io/crates/sorbit)
+[![SonarQube quality](https://sonarcloud.io/api/project_badges/measure?project=petiaccja_sorbit&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=petiaccja_sorbit)
+[![Code coverage](https://sonarcloud.io/api/project_badges/measure?project=petiaccja_sorbit&metric=coverage)](https://sonarcloud.io/summary/new_code?id=petiaccja_sorbit)
 
 *Notice: the API is not yet stable.*
 
