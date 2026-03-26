@@ -21,4 +21,12 @@ sorbit_derive.workspace = true
 num.workspace = true
 
 [dev-dependencies]
+sorbit_derive_impl.workspace = true
 rstest.workspace = true
+runtime-macros.workspace = true
+proc-macro2.workspace = true
+syn = { version = "2.0.38", default-features = false, features = [
+    "parsing",
+    "printing",
+    "full",
+] }
