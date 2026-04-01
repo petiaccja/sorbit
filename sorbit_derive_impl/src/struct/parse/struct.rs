@@ -1,9 +1,9 @@
-use std::collections::HashSet;
-
-use syn::{DeriveInput, Generics, Ident, spanned::Spanned};
+use syn::{DeriveInput, Generics, Ident, spanned::Spanned as _};
 
 use super::field::Field;
+
 use crate::attribute::{ByteOrder, as_byte_order, as_literal_int, parse_nvp_attribute_group, path};
+use crate::utility::check_invalid_parameters;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Struct {
@@ -23,13 +23,13 @@ impl TryFrom<DeriveInput> for Struct {
                 let sorbit_attrs = value.attrs.iter().filter(|attr| attr.path() == &path::sorbit_attribute());
                 let parameters = parse_nvp_attribute_group(sorbit_attrs)?;
 
-                let accepted_parameters: HashSet<_> =
-                    [path::byte_order(), path::len(), path::round()].into_iter().collect();
-                for (name, _) in &parameters {
-                    if !accepted_parameters.contains(&name) {
-                        return Err(syn::Error::new(name.span(), "unrecognized parameter"));
-                    }
-                }
+                let accepted_parameters = [
+                    path::byte_order(),
+                    path::len(),
+                    path::round(),
+                    path::catch_all(), // This is a bit hacky. Listed here only for fielded enum variants, struct ignores it.
+                ];
+                check_invalid_parameters(&parameters, accepted_parameters.iter())?;
 
                 let byte_order = parameters.get(&path::byte_order()).map(|expr| as_byte_order(expr)).transpose()?;
                 let len = parameters.get(&path::len()).map(|expr| as_literal_int(expr)).transpose()?;

@@ -1,6 +1,8 @@
+use std::collections::{HashMap, HashSet};
+
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::{GenericArgument, PathArguments, PathSegment, TypePath, parse_quote};
+use syn::{Expr, GenericArgument, Path, PathArguments, PathSegment, TypePath, parse_quote, spanned::Spanned as _};
 
 /// Convert a type which is single ident into an actual type.
 pub fn ident_to_type(ident: syn::Ident) -> syn::Type {
@@ -24,15 +26,48 @@ pub fn to_member(ident: Option<syn::Ident>, index: usize, span: Span) -> syn::Me
 }
 
 /// Return a pattern that deconstructs a structure.
-pub fn deconstruct_pattern<'a>(struct_ty: &syn::Type, members: impl Iterator<Item = &'a syn::Member>) -> syn::Pat {
+pub fn deconstruct_pattern(struct_ty: &syn::Type, members: impl Iterator<Item = syn::Member>) -> syn::Pat {
     let members = members.map(|member| match member {
         syn::Member::Named(ident) => quote! { #ident },
         syn::Member::Unnamed(index) => {
-            let ident = member_to_ident((*member).clone());
+            let ident = member_to_ident(syn::Member::Unnamed(index.clone()));
             quote! { #index: #ident }
         }
     });
     parse_quote!(#struct_ty{ #(#members),* })
+}
+
+/// Return a pattern that deconstructs a structure with the identifier explicitly given.
+pub fn deconstruct_pattern_explicit(
+    struct_ty: &syn::Type,
+    members: impl Iterator<Item = (syn::Member, syn::Ident)>,
+) -> syn::Pat {
+    let members = members.map(|(member, ident)| match member {
+        syn::Member::Named(field) => {
+            if field == ident {
+                quote! { #ident }
+            } else {
+                quote! { #field: #ident }
+            }
+        }
+        syn::Member::Unnamed(index) => {
+            quote! { #index: #ident }
+        }
+    });
+    parse_quote!(#struct_ty{ #(#members),* })
+}
+
+pub fn check_invalid_parameters<'a>(
+    parameters: &HashMap<Path, Expr>,
+    accepted_parameters: impl Iterator<Item = &'a Path>,
+) -> Result<(), syn::Error> {
+    let accepted_parameters: HashSet<_> = accepted_parameters.cloned().collect();
+    for (parameter, _) in parameters {
+        if !accepted_parameters.contains(parameter) {
+            return Err(syn::Error::new(parameter.span(), "parameter is not accepted here"));
+        }
+    }
+    Ok(())
 }
 
 pub trait PhantomType {

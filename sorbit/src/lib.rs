@@ -308,9 +308,9 @@
 //! enum Example {
 //!     A = 1,
 //!     B(u32),
-//!     C{c: u16},
+//!     C{ c: u16 },
 //!     #[sorbit(catch_all)]
-//!     D(u8),
+//!     D{ discriminant: u8, data: u16 },
 //! }
 //! ```
 //!
@@ -332,12 +332,29 @@
 //! as usual, and it is followed immediately by the variant, which is serialized
 //! as a `struct``.
 //!
-//! The catch all variant may be a unit variant (i.e. `CatchAll`) or a tuple
-//! variant with exactly one field of the same type as the enum's repr
-//! (i.e. `CatchAll(u16)`). When the catch all is a tuple field, the
-//! discriminant read during deserialization will be stored in the catch all
-//! variant. During serialization, when the enum is the catch all variant,
-//! the discriminant is taken from the catch all variant's field.
+//! The catch-all variant may be:
+//! - A unit variant (i.e. `CatchAll`): During serialization, the discriminant
+//!   of the catch-all variant is written out. During deserialization, the
+//!   discriminant is discarded.
+//! - A fielded variant (i.e. `CatchAll(u8, Data)` or `CatchAll{ d: u8, c: Data }`):
+//!   The first field is treated as the discriminant, the remaining fields are
+//!   treated as a `struct`. During serialization, the discriminant (`d` in the
+//!   examples) is serialized, then the remaining fields are serialized together
+//!   as a `struct`. During deserialization, the discriminant is deserialized
+//!   and saved into the first field (i.e. `d`), and then the remaining fields
+//!   are deserialized together as a struct.
+//!
+//!   The usual struct serialization rules apply, and you're free to use layout
+//!   attributes. Note that any layout attributes you specify on the variant
+//!   will not apply to the first field (i.e. the discriminant), only to the
+//!   content fields. Attributes specified on the first field are ignored.
+//!
+//!   You need to exercise extra caution when using fielded catch-all variants:
+//!   the data fields must cover all the different unhandled data structures,
+//!   and must consume all of its bytes if you intend to keep deserializing
+//!   from the stream after deserializing the enum. In case this enum is the only
+//!   object you deserialize, you can ignore the bytes of the unhandled variants,
+//!   but this is not recommended.
 //!
 //! #### Bit packing
 //!

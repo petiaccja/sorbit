@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use syn::{Generics, Ident, Member, parse_quote};
+use syn::{Generics, Ident, Member, Type, parse_quote};
 
 use crate::attribute::{ByteOrder, Transform};
 use crate::ir::{Region, Value};
@@ -236,13 +236,17 @@ impl Struct {
     }
 
     pub fn members(&self) -> Vec<&Member> {
+        self.fields().iter().map(|(member, _)| *member).collect()
+    }
+
+    pub fn fields(&self) -> Vec<(&Member, &Type)> {
         let mut result = Vec::new();
         for field in &self.fields {
             match field {
-                Field::Direct { member, .. } => result.push(member),
+                Field::Direct { member, ty, .. } => result.push((member, ty)),
                 Field::Bit { members, .. } => {
-                    for BitFieldMember { member, .. } in members {
-                        result.push(member);
+                    for BitFieldMember { member, ty, .. } in members {
+                        result.push((member, ty));
                     }
                 }
             }
