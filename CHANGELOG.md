@@ -1,3 +1,9 @@
+## 0.1.2 (2026-04-01)
+
+### Features
+
+- added fielded catch_all variants
+
 ## 0.1.1 (2026-03-25)
 
 ### Features
