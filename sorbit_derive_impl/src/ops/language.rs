@@ -72,6 +72,39 @@ impl ToTokens for UseOp {
 }
 
 //------------------------------------------------------------------------------
+// Struct declaration
+//------------------------------------------------------------------------------
+
+op!(
+    name: "declare_struct",
+    builder: declare_struct,
+    op: DeclareStructOp,
+    inputs: {},
+    outputs: {},
+    attributes: {name: Ident, fields: Vec<(Member, Type)>},
+    regions: {},
+    terminator: false
+);
+
+impl ToTokens for DeclareStructOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = &self.name;
+        let is_unnamed = self.fields.iter().any(|field| matches!(field.0, Member::Unnamed(_)));
+        let fields = self.fields.iter().map(|field| {
+            let ty = &field.1;
+            match &field.0 {
+                Member::Named(ident) => quote! {#ident: #ty},
+                Member::Unnamed(_) => quote! {#ty},
+            }
+        });
+        match is_unnamed {
+            true => tokens.extend(quote! { struct #name(#(#fields),*) }),
+            false => tokens.extend(quote! { struct #name{ #(#fields),* } }),
+        };
+    }
+}
+
+//------------------------------------------------------------------------------
 // Destructure
 //------------------------------------------------------------------------------
 
@@ -89,7 +122,7 @@ op!(
 impl ToTokens for DestructureOp {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let structured = self.structured;
-        let members = self.bindings.iter().map(|(member, _)| member);
+        let members = self.bindings.iter().map(|(member, _)| member.clone());
         let pat = deconstruct_pattern(&self.ty, members.into_iter());
         tokens.extend(quote! { let #pat = #structured })
     }

@@ -1,23 +1,17 @@
-use std::collections::HashSet;
-
 use proc_macro2::Span;
-use syn::{Attribute, DeriveInput, Fields, Generics, Token};
-use syn::{Expr, Ident, Type, spanned::Spanned};
+use syn::punctuated::Punctuated;
+use syn::{Attribute, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed, Generics, Member, Token};
+use syn::{Expr, Ident, Type};
 
 use crate::attribute::{as_literal_bool, parse_nvp_attribute_group, path};
 use crate::r#struct::parse::Struct;
+use crate::utility::check_invalid_parameters;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Variant {
     pub ident: Ident,
     pub discriminant: Option<Expr>,
-    /// The variant is a "catch all" for unrecognized discriminants.
-    ///
-    /// Meaning:
-    /// - `Some(Some(ty))`: variant is the catch all, and stores the discriminant as `ty` (i.e. `#[sorbit(catch_all)] CatchAll(u8)`)
-    /// - `Some(None)`: variant is the catch all, but stores no discriminant (i.e. `#[sorbit(catch_all)] CatchAll`)
-    /// - `None`: variant is not the catch all (i.e. `NotCatchAll`)
-    pub catch_all: Option<Option<Type>>,
+    pub catch_all: CatchAll,
     pub content: Option<Struct>,
 }
 
@@ -27,61 +21,58 @@ impl TryFrom<syn::Variant> for Variant {
         let sorbit_attrs = value.attrs.iter().filter(|attr| attr.path() == &path::sorbit_attribute());
         let parameters = parse_nvp_attribute_group(sorbit_attrs)?;
 
-        let accepted_parameters: HashSet<_> = [
+        let accepted_parameters = [
             path::catch_all(),
             path::byte_order(),
             path::len(),
             path::round(),
-        ]
-        .into_iter()
-        .collect();
-        for (name, _) in &parameters {
-            if !accepted_parameters.contains(&name) {
-                return Err(syn::Error::new(name.span(), "unrecognized parameter"));
-            }
-        }
+        ];
+        check_invalid_parameters(&parameters, accepted_parameters.iter())?;
 
+        let discriminant = value.discriminant.map(|(_, expr)| expr);
         let catch_all_tag =
             parameters.get(&path::catch_all()).map(|expr| as_literal_bool(expr)).transpose()?.unwrap_or(false);
-        let catch_all = match catch_all(&value, catch_all_tag) {
-            Ok(value) => value,
-            Err(value) => return value,
-        };
-        let discriminant = value.discriminant.map(|(_, expr)| expr);
-        let content = if !catch_all_tag {
-            content(value.ident.clone(), value.attrs, value.fields)?
+        let (catch_all, content) = if !catch_all_tag {
+            parse_regular(value.ident.clone(), value.attrs, value.fields)?
         } else {
-            None
+            parse_catch_all(value.ident.clone(), value.attrs, value.fields)?
         };
 
         Ok(Self { ident: value.ident, discriminant, catch_all, content })
     }
 }
 
-fn catch_all(value: &syn::Variant, catch_all_tag: bool) -> Result<Option<Option<Type>>, Result<Variant, syn::Error>> {
-    Ok(if !catch_all_tag {
-        None
-    } else {
-        if value.fields.len() > 1 {
-            return Err(Err(syn::Error::new(
-                value.fields.span(),
-                "catch all variant must be a unit variant or a tuple variant with exactly one field of the enum's repr type",
-            )));
-        } else if let Some(catch_all_field) = value.fields.iter().next() {
-            if catch_all_field.ident.is_some() {
-                return Err(Err(syn::Error::new(
-                    catch_all_field.span(),
-                    "catch all variant must be a unit variant or a tuple variant with exactly one field of the enum's repr type",
-                )));
-            };
-            Some(Some(catch_all_field.ty.clone()))
-        } else {
-            Some(None)
-        }
-    })
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatchAll {
+    None,
+    Blanket,
+    Discriminant(Member, Type),
 }
 
-fn content(ident: Ident, attrs: Vec<Attribute>, fields: Fields) -> Result<Option<Struct>, syn::Error> {
+fn parse_catch_all(
+    ident: Ident,
+    attrs: Vec<Attribute>,
+    fields: Fields,
+) -> Result<(CatchAll, Option<Struct>), syn::Error> {
+    let (discr_field, rest) = pop_first_field(fields);
+    let catch_all = discr_field
+        .map(|field| {
+            CatchAll::Discriminant(field.ident.map(|ident| Member::from(ident)).unwrap_or(Member::from(0)), field.ty)
+        })
+        .unwrap_or(CatchAll::Blanket);
+    let content = parse_content(ident, attrs, rest)?;
+    Ok((catch_all, content))
+}
+
+fn parse_regular(
+    ident: Ident,
+    attrs: Vec<Attribute>,
+    fields: Fields,
+) -> Result<(CatchAll, Option<Struct>), syn::Error> {
+    Ok((CatchAll::None, parse_content(ident, attrs, fields)?))
+}
+
+fn parse_content(ident: Ident, attrs: Vec<Attribute>, fields: Fields) -> Result<Option<Struct>, syn::Error> {
     if fields.is_empty() {
         Ok(None)
     } else {
@@ -100,10 +91,31 @@ fn content(ident: Ident, attrs: Vec<Attribute>, fields: Fields) -> Result<Option
     }
 }
 
+fn pop_first_field(fields: Fields) -> (Option<Field>, Fields) {
+    match fields {
+        Fields::Named(FieldsNamed { brace_token, named }) => {
+            let (first, named) = pop_first_puncuated(named);
+            (first, Fields::Named(FieldsNamed { brace_token, named }))
+        }
+        Fields::Unnamed(FieldsUnnamed { paren_token, unnamed }) => {
+            let (first, unnamed) = pop_first_puncuated(unnamed);
+            (first, Fields::Unnamed(FieldsUnnamed { paren_token, unnamed }))
+        }
+        Fields::Unit => (None, Fields::Unit),
+    }
+}
+
+fn pop_first_puncuated<T, P: Default>(punctuated: Punctuated<T, P>) -> (Option<T>, Punctuated<T, P>) {
+    let mut it = punctuated.into_iter();
+    let first = it.next();
+    let rest = it.collect();
+    (first, rest)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        attribute::Transform,
+        attribute::{ByteOrder, Transform},
         r#struct::parse::{Field, FieldLayoutProperties},
     };
 
@@ -115,7 +127,7 @@ mod tests {
     fn simple() {
         let input: syn::Variant = parse_quote!(A);
         let actual = Variant::try_from(input).unwrap();
-        let expected = Variant { ident: parse_quote!(A), discriminant: None, catch_all: None, content: None };
+        let expected = Variant { ident: parse_quote!(A), discriminant: None, catch_all: CatchAll::None, content: None };
         assert_eq!(actual, expected);
     }
 
@@ -126,7 +138,8 @@ mod tests {
             A
         );
         let actual = Variant::try_from(input).unwrap();
-        let expected = Variant { ident: parse_quote!(A), discriminant: None, catch_all: Some(None), content: None };
+        let expected =
+            Variant { ident: parse_quote!(A), discriminant: None, catch_all: CatchAll::Blanket, content: None };
         assert_eq!(actual, expected);
     }
 
@@ -140,28 +153,101 @@ mod tests {
         let expected = Variant {
             ident: parse_quote!(A),
             discriminant: None,
-            catch_all: Some(Some(parse_quote!(u8))),
+            catch_all: CatchAll::Discriminant(Member::from(0), parse_quote!(u8)),
             content: None,
         };
         assert_eq!(actual, expected);
     }
 
     #[test]
-    #[should_panic]
     fn catch_all_struct() {
         let input: syn::Variant = parse_quote!(
             #[sorbit(catch_all)]
             A { a: u8 }
         );
-        let _ = Variant::try_from(input).unwrap();
+        let actual = Variant::try_from(input).unwrap();
+        let expected = Variant {
+            ident: parse_quote!(A),
+            discriminant: None,
+            catch_all: CatchAll::Discriminant(parse_quote!(a), parse_quote!(u8)),
+            content: None,
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn catch_all_content_tuple() {
+        let input: syn::Variant = parse_quote!(
+            #[sorbit(catch_all)]
+            A(u8, u16)
+        );
+        let actual = Variant::try_from(input).unwrap();
+        let expected = Variant {
+            ident: parse_quote!(A),
+            discriminant: None,
+            catch_all: CatchAll::Discriminant(parse_quote!(0), parse_quote!(u8)),
+            content: Some(Struct {
+                ident: parse_quote!(A),
+                generics: Generics::default(),
+                byte_order: None,
+                len: None,
+                round: None,
+                fields: vec![Field::Direct {
+                    ident: None,
+                    ty: parse_quote!(u16),
+                    multi_pass: None,
+                    transform: Transform::None,
+                    layout_properties: Default::default(),
+                }],
+            }),
+        };
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn catch_all_content_struct() {
+        let input: syn::Variant = parse_quote!(
+            #[sorbit(catch_all)]
+            #[sorbit(byte_order = big_endian)]
+            A {
+                ca: u8,
+                #[sorbit(multi_pass)]
+                field: u16,
+            }
+        );
+        let actual = Variant::try_from(input).unwrap();
+        let expected = Variant {
+            ident: parse_quote!(A),
+            discriminant: None,
+            catch_all: CatchAll::Discriminant(parse_quote!(ca), parse_quote!(u8)),
+            content: Some(Struct {
+                ident: parse_quote!(A),
+                generics: Generics::default(),
+                byte_order: Some(ByteOrder::BigEndian),
+                len: None,
+                round: None,
+                fields: vec![Field::Direct {
+                    ident: Some(parse_quote!(field)),
+                    ty: parse_quote!(u16),
+                    multi_pass: Some(true),
+                    transform: Transform::None,
+                    layout_properties: Default::default(),
+                }],
+            }),
+        };
+        assert_eq!(actual, expected);
     }
 
     #[test]
     fn discriminant() {
         let input: syn::Variant = parse_quote!(A = 34);
         let actual = Variant::try_from(input).unwrap();
-        let expected =
-            Variant { ident: parse_quote!(A), discriminant: Some(parse_quote!(34)), catch_all: None, content: None };
+        let expected = Variant {
+            ident: parse_quote!(A),
+            discriminant: Some(parse_quote!(34)),
+            catch_all: CatchAll::None,
+            content: None,
+        };
         assert_eq!(actual, expected);
     }
 
@@ -178,7 +264,7 @@ mod tests {
         let expected = Variant {
             ident: parse_quote!(A),
             discriminant: None,
-            catch_all: None,
+            catch_all: CatchAll::None,
             content: Some(Struct {
                 ident: parse_quote!(A),
                 generics: Generics::default(),

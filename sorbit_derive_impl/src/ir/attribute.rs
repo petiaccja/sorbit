@@ -40,6 +40,14 @@ impl Attribute for Vec<(syn::Member, syn::Ident)> {
     }
 }
 
+impl Attribute for Vec<(syn::Member, syn::Type)> {
+    fn display(&self) -> String {
+        let members: Vec<_> =
+            self.iter().map(|(member, ty)| format!("{}: {}", member.display(), ty.display())).collect();
+        members.join(", ")
+    }
+}
+
 impl<T: Display> Attribute for std::ops::Range<T> {
     fn display(&self) -> String {
         format!("{}..{}", self.start, self.end)

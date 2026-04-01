@@ -1,13 +1,13 @@
 use proc_macro2::Span;
-use std::{
-    collections::{HashMap, HashSet},
-    ops::Range,
-};
+use std::{collections::HashMap, ops::Range};
 use syn::{Expr, Ident, Path, Type, spanned::Spanned};
 
-use crate::attribute::{
-    BitNumbering, ByteOrder, Transform, as_bit_numbering, as_byte_order, as_ident, as_literal_bool, as_literal_int,
-    as_literal_int_range, as_transform, as_type, parse_nvp_attribute_group, path,
+use crate::{
+    attribute::{
+        BitNumbering, ByteOrder, Transform, as_bit_numbering, as_byte_order, as_ident, as_literal_bool, as_literal_int,
+        as_literal_int_range, as_transform, as_type, parse_nvp_attribute_group, path,
+    },
+    utility::check_invalid_parameters,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -170,19 +170,6 @@ impl BitFieldStorageProperties {
     pub fn accepted_parameters() -> [Path; 2] {
         [path::storage_ty(), path::bit_numbering()]
     }
-}
-
-fn check_invalid_parameters<'a>(
-    parameters: &HashMap<Path, Expr>,
-    accepted_parameters: impl Iterator<Item = &'a Path>,
-) -> Result<(), syn::Error> {
-    let accepted_parameters: HashSet<_> = accepted_parameters.cloned().collect();
-    for (parameter, _) in parameters {
-        if !accepted_parameters.contains(parameter) {
-            return Err(syn::Error::new(parameter.span(), "parameter is not accepted here"));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

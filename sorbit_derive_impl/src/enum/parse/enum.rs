@@ -1,9 +1,8 @@
-use std::collections::HashSet;
-
 use syn::{DeriveInput, Generics, Ident, Type, spanned::Spanned as _};
 
 use crate::attribute::{ByteOrder, as_byte_order, as_type, parse_nvp_attribute_group, parse_repr_attribute, path};
 use crate::r#enum::parse::Variant;
+use crate::utility::check_invalid_parameters;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Enum {
@@ -22,12 +21,8 @@ impl TryFrom<DeriveInput> for Enum {
                 let sorbit_attrs = value.attrs.iter().filter(|attr| attr.path() == &path::sorbit_attribute());
                 let parameters = parse_nvp_attribute_group(sorbit_attrs)?;
 
-                let accepted_parameters: HashSet<_> = [path::byte_order(), path::storage_ty()].into_iter().collect();
-                for (name, _) in &parameters {
-                    if !accepted_parameters.contains(&name) {
-                        return Err(syn::Error::new(name.span(), "unrecognized parameter"));
-                    }
-                }
+                let accepted_parameters = [path::byte_order(), path::storage_ty()];
+                check_invalid_parameters(&parameters, accepted_parameters.iter())?;
 
                 let repr = value
                     .attrs
