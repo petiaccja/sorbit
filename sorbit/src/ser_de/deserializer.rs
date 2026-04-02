@@ -58,7 +58,7 @@ pub trait Deserializer: Sized {
     fn deserialize_slice(&mut self, value: &mut [u8]) -> Result<(), Self::Error>;
 
     /// Pad with zeros up to `until`, which is interpreted from the beginning
-    /// of the current composite. (See [`Self::deserialize_composite`].)
+    /// of the current composite. (See [`deserialize_composite`](Self::deserialize_composite).)
     ///
     /// ## Errors
     ///
@@ -67,13 +67,13 @@ pub trait Deserializer: Sized {
     fn pad(&mut self, until: u64) -> Result<(), Self::Error>;
 
     /// Pad with zeros so that the size of the current composite becomes a
-    /// multiple of `multiple_of`. (See [`Self::deserialize_composite`].)
+    /// multiple of `multiple_of`. (See [`deserialize_composite`](Self::deserialize_composite).)
     fn align(&mut self, multiple_of: u64) -> Result<(), Self::Error>;
 
     /// Deserialize a composite object (e.g. a struct).
     ///
     /// This does not affect the underlying stream and serves only as a marker
-    /// for the [`Self::pad`] and [`Self::align`] functions.
+    /// for the [`pad`](Self::pad) and [`align`](Self::align) functions.
     /// This call can be nested as necessary (i.e. composite of composites).
     ///
     /// ## Members of the composite
@@ -122,7 +122,7 @@ pub trait Deserializer: Sized {
 
     /// Return an error, indicating that deserialization failed.
     ///
-    /// This method can be called by implementors of [`crate::ser_de::Serialize`]
+    /// This method can be called by implementors of [`Serialize`](crate::ser_de::Serialize)
     /// when an error occurs during serialization.
     fn error<O>(&self, message: &'static str) -> Result<O, Self::Error>;
 }

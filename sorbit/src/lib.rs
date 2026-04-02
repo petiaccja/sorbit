@@ -62,7 +62,7 @@
 //!
 //! ### Serializable objects
 //!
-//! Any type can implement the [ser_de::Serialize] and [ser_de::Deserialize]
+//! Any type can implement the [`Serialize`](ser_de::Serialize) and [`Deserialize`](ser_de::Deserialize)
 //! traits, which make the object serializable and deserializable.
 //!
 //! There are two ways to implement these traits:
@@ -70,19 +70,19 @@
 //!   approach, you can leverage the `#[sorbit(...)]` attributes to control the
 //!   binary layout of the data. The derive macros cover most of your needs, and
 //!   you should use them for simplicity and robustness whenever possible.
-//! - Manually deriving [ser_de::Serialize] and [ser_de::Deserialize].
+//! - Manually deriving [`Serialize`](ser_de::Serialize) and [`Deserialize`](ser_de::Deserialize).
 //!   The layout control attributes cannot express everything, and in those
 //!   cases you need to derive the traits by hand. Use this approach only
 //!   when necessary.
 //!
 //! ### Serializers
 //!
-//! Objects can be serialized into a [ser_de::Serializer], and deserialized from a
-//! [ser_de::Deserializer]. The serializers and deserializers own the serialized
+//! Objects can be serialized into a [`Serializer`](ser_de::Serializer), and deserialized from a
+//! [`Deserializer`](ser_de::Deserializer). The serializers and deserializers own the serialized
 //! bytes, typically in the form of a stream (e.g. TCP stream).
 //!
-//! Sorbit ships with a generic [stream_ser_de::StreamSerializer] and a
-//! [stream_ser_de::StreamDeserializer]. These serializers can serialize data
+//! Sorbit ships with a generic [`StreamSerializer`](stream_ser_de::StreamSerializer) and a
+//! [`StreamDeserializer`](stream_ser_de::StreamDeserializer). These serializers can serialize data
 //! into any byte stream. While it's possible to implement your own serializers,
 //! the stream serializers will likely cover most of your needs, and all you
 //! need to do is implement some streams.
@@ -98,7 +98,7 @@
 //!
 //! ### Streams
 //!
-//! Streams implement a subset of the [`io::Read`], [`io::Write`], and [`io::Seek`]
+//! Streams implement a subset of the [`Read`](io::Read), [`Write`](io::Write), and [`Seek`](io::Seek)
 //! traits. These are analogous to the `std` equivalents, the reason for this
 //! duplication is because sorbit needs to work in `no_std` environments, where
 //! these traits aren't available.
@@ -112,8 +112,8 @@
 //! Regular `Serializer`s write the output bytes monotonously, without ever
 //! looking back at the bytes written. This works for most cases, but some items,
 //! like checksums, are calculated after the object has been serialized. To solve
-//! this issue, sorbit also provides the [ser_de::MultiPassSerialize] and
-//! [ser_de::RevisableSerializer] traits. With these traits, it's possible to
+//! this issue, sorbit also provides the [`MultiPassSerialize`](ser_de::MultiPassSerialize) and
+//! [`RevisableSerializer`](ser_de::RevisableSerializer) traits. With these traits, it's possible to
 //! look back at the previously serialized data, make calculations, and update
 //! parts of or all of the previously written bytes.
 //!
@@ -269,7 +269,7 @@
 //! | `bits`          | Bounded range (`bits=a..b`, `bits=a..=b`), number (`bits=a`) | The bits occupied by the member within the storage. The values must be integer literals. |
 //!
 //! While both the bit field members and the bit field storage may be any types,
-//! they are linked by the [`bit::PackInto`] and [`bit::UnpackFrom`] traits.
+//! they are linked by the [`PackInto`](bit::PackInto) and [`UnpackFrom`](bit::UnpackFrom) traits.
 //! As long as these traits are implement for the member-storage type pair,
 //! the serialization can be derived.
 //!
@@ -358,7 +358,7 @@
 //!
 //! #### Bit packing
 //!
-//! Remember the [sorbit::bit::PackInto] and [sorbit::bit::UnpackFrom] traits
+//! Remember the [`PackInto`](bit::PackInto) and [`UnpackFrom`](bit::UnpackFrom) traits
 //! you need to implement for a type to use it in a bit field?
 //!
 //! You can derive them for enumerations:
@@ -397,22 +397,52 @@
 //! *To the authors of the libraries mentioned below, please reach out if you
 //! find inaccurate information.*
 //!
-//! - Sorbit vs [serde](https://docs.rs/serde/latest/serde/): Serde is a general
-//!   serialization framework, excelling at handling all sorts of text formats
-//!   (e.g. JSON, YAML) and efficient binary formats (e.g. [postcard](https://docs.rs/postcard/latest/postcard/)).
-//!   Sorbit, on the other hand, is tailored to define specific binary formats,
-//!   which is less convenient, if at all possible, with serde. While sorbit is
-//!   also very efficient, crates like serde provide way more options together
-//!   with a first-class support for textual formats.
-//! - Sorbit vs [deku](https://docs.rs/deku/0.20.3/deku/index.html): Regarding
-//!   functionality, sorbit and deku are very similar, as they both focus on
-//!   making the serialization of specific binary formats easier.
+//! - **[serde](https://docs.rs/serde/latest/serde/) vs sorbit**:
+//!   
+//!   Serde and sorbit are apples and oranges:
+//!   - Serde enables you to serialize the same object in many different
+//!     predefined formats, including text and binary, and fine-tune the result
+//!     within the format's envelope.
+//!   - Sorbit helps you define a binary format of your liking individually for
+//!     each `struct`/`enum`. Text and multiple formats for the same structure
+//!     are limited and not the typical use case for sorbit.
 //!
-//!   So what are the differences then?
-//!   - While deku supports `no_std` environments, sorbit also supports heapless
-//!     environments.
-//!   - The APIs look and feel different. You should take a look at both before
-//!     making your mind up.
+//!   Don't try to exchange one for the other, figure out the problem you're
+//!   trying to solve and pick the right one.
+//!
+//! - **[deku](https://docs.rs/deku/0.20.3/deku/index.html) vs sorbit**:
+//!
+//!   The two libraries have the same goal: to define specific binary serialization
+//!   layouts declaratively using attributes.
+//!
+//!   Their functionality is similar, but there are some differences:
+//!   - Design:
+//!     - Sorbit uses identifiers (e.g. `big_endian`), deku uses strings (e.g.
+//!       `"big"`).
+//!     - Sorbit's attributes are symmetrical (e.g. `len` implies `len_by`), in
+//!       deku your serialize and deserialize code may not match (e.g. `temp`,
+//!       `temp_value`, and `count` do not imply each other).
+//!     - Deku uses arbitrary seeking and relative padding to define layout,
+//!       sorbit uses offset, alignment, and rounding attributes.
+//!     - Deku uses a custom version of `derive` to handle temporary fields,
+//!       sorbit uses standard `derive` and `PhantomData`.
+//!   - Features:
+//!     - Sorbit supports no-`alloc` environments, deku requires `alloc`, but
+//!       supports `no_std` like sorbit.
+//!     - Sorbit can compute the byte size of any collection, with deku you
+//!       have to compute it yourself using `temp_value`.
+//!     - Deku is more featureful: it supports assertions, collection end
+//!       predicates, reading to EOF, updates, conditionals, and custom
+//!       serialize/deserialize functions.
+//!     - Deku supports arbitrary expressions in the attributes, sorbit relies
+//!       more on literal expressions.
+//!     - Deku treats your entire byte stream as a bit field, sorbit needs you
+//!       to define bit fields of a fixed size.
+//!
+//!   Overall, my impression is that as long as sorbit's attributes are
+//!   sufficient, it's simpler and more robust than deku. However, deku's
+//!   attributes will handle more complex cases that would mean a fallback to
+//!   manual trait implementation in sorbit.
 
 // Disable the [`std`] standard crate when the "std" feature is not enabled.
 #![cfg_attr(not(feature = "std"), no_std)]

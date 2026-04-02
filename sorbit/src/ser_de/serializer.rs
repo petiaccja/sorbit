@@ -74,7 +74,7 @@ pub trait Serializer {
     fn serialize_slice(&mut self, value: &[u8]) -> Result<Self::Success, Self::Error>;
 
     /// Pad with zeros up to `until`, which is interpreted from the beginning
-    /// of the current composite. (See [`Serializer::serialize_composite`].)
+    /// of the current composite. (See [`serialize_composite`](Self::serialize_composite).)
     ///
     /// ## Errors
     ///
@@ -83,13 +83,13 @@ pub trait Serializer {
     fn pad(&mut self, until: u64) -> Result<Self::Success, Self::Error>;
 
     /// Pad with zeros so that the size of the current composite becomes a
-    /// multiple of `multiple_of`. (See [`Serializer::serialize_composite`].)
+    /// multiple of `multiple_of`. (See [`serialize_composite`](Self::serialize_composite).)
     fn align(&mut self, multiple_of: u64) -> Result<Self::Success, Self::Error>;
 
     /// Serialize a composite object (e.g. a struct).
     ///
     /// This does not affect the underlying stream and serves only as a marker
-    /// for the [`Serializer::pad`] and [`Serializer::align`] functions.
+    /// for the [`pad`](Self::pad) and [`align`](Self::align) functions.
     /// This call can be nested as necessary (i.e. composite of composites).
     ///
     /// ## Members of the composite
@@ -123,7 +123,7 @@ pub trait Serializer {
 
     /// Return an error, indicating that serialization failed.
     ///
-    /// This method can be called by implementors of [`crate::ser_de::Serialize`]
+    /// This method can be called by implementors of [`Serialize`](crate::ser_de::Serialize)
     /// when an error occurs during serialization.
     fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error>;
 }
@@ -165,7 +165,7 @@ pub trait RevisableSerializer: Serializer<Success: Span> {
     ///
     /// This function can be used to write checksums of the length of items
     /// after the rest of the structure was serialized. The checksums or
-    /// lengths can be computed by [`Self::analyze_span`].
+    /// lengths can be computed by [`analyze_span`](Self::analyze_span).
     fn revise_span<Output>(
         &mut self,
         span: &Self::Success,
