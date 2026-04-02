@@ -35,7 +35,7 @@ impl<Stream: Write> StreamSerializer<Stream> {
     /// Create a new serializer.
     ///
     /// The default byte order is native byte order. Use the
-    /// [`Self::change_byte_order`] to set a specific byte order:
+    /// [`change_byte_order`](Self::change_byte_order) to set a specific byte order:
     /// ```
     /// # use sorbit::stream_ser_de::StreamSerializer;
     /// # use sorbit::io::GrowingMemoryStream;

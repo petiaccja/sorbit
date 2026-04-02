@@ -12,12 +12,12 @@ use super::bit_util::{bit_size_of, keep_lowest_n_bits};
 /// Unlike traditional bit fields that define a fixed set of members with
 /// their bit width and offset at compile time, this data structure works
 /// entirely at runtime, and can therefore represent any bit field. You can
-/// start with an empty bit field via [`Self::new`], and then use [`Self::pack`]
-/// to add the members. You can extract a member via [`Self::unpack`].
+/// start with an empty bit field via [`new`](Self::new), and then use [`pack`](Self::pack)
+/// to add the members. You can extract a member via [`unpack`](Self::unpack).
 ///
 /// To check for overwriting the same bits when adding a new member, the [`BitField`]
 /// stores a mask internally. The affected bits of the mask are set to 1 when a
-/// new member is added via [`Self::pack`]. The next time the same bits are written,
+/// new member is added via [`pack`](Self::pack). The next time the same bits are written,
 /// an error is raised.
 ///
 /// # Generic parameters
