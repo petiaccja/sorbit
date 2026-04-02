@@ -397,22 +397,52 @@
 //! *To the authors of the libraries mentioned below, please reach out if you
 //! find inaccurate information.*
 //!
-//! - Sorbit vs [serde](https://docs.rs/serde/latest/serde/): Serde is a general
-//!   serialization framework, excelling at handling all sorts of text formats
-//!   (e.g. JSON, YAML) and efficient binary formats (e.g. [postcard](https://docs.rs/postcard/latest/postcard/)).
-//!   Sorbit, on the other hand, is tailored to define specific binary formats,
-//!   which is less convenient, if at all possible, with serde. While sorbit is
-//!   also very efficient, crates like serde provide way more options together
-//!   with a first-class support for textual formats.
-//! - Sorbit vs [deku](https://docs.rs/deku/0.20.3/deku/index.html): Regarding
-//!   functionality, sorbit and deku are very similar, as they both focus on
-//!   making the serialization of specific binary formats easier.
+//! - **[serde](https://docs.rs/serde/latest/serde/) vs sorbit**:
+//!   
+//!   Serde and sorbit are apples and oranges:
+//!   - Serde enables you to serialize the same object in many different
+//!     predefined formats, including text and binary, and fine-tune the result
+//!     within the format's envelope.
+//!   - Sorbit helps you define a binary format of your liking individually for
+//!     each `struct`/`enum`. Text and multiple formats for the same structure
+//!     are limited and not the typical use case for sorbit.
 //!
-//!   So what are the differences then?
-//!   - While deku supports `no_std` environments, sorbit also supports heapless
-//!     environments.
-//!   - The APIs look and feel different. You should take a look at both before
-//!     making your mind up.
+//!   Don't try to exchange one for the other, figure out the problem you're
+//!   trying to solve and pick the right one.
+//!
+//! - **[deku](https://docs.rs/deku/0.20.3/deku/index.html) vs sorbit**:
+//!
+//!   The two libraries have the same goal: to define specific binary serialization
+//!   layouts declaratively using attributes.
+//!
+//!   Their functionality is similar, but there are some differences:
+//!   - Design:
+//!     - Sorbit uses identifiers (e.g. `big_endian`), deku uses strings (e.g.
+//!       `"big"`).
+//!     - Sorbit's attributes are symmetrical (e.g. `len` implies `len_by`), in
+//!       deku your serialize and deserialize code may not match (e.g. `temp`,
+//!       `temp_value`, and `count` do not imply each other).
+//!     - Deku uses arbitrary seeking and relative padding to define layout,
+//!       sorbit uses offset, alignment, and rounding attributes.
+//!     - Deku uses a custom version of `derive` to handle temporary fields,
+//!       sorbit uses standard `derive` and `PhantomData`.
+//!   - Features:
+//!     - Sorbit supports no-`alloc` environments, deku requires `alloc`, but
+//!       supports `no_std` like sorbit.
+//!     - Sorbit can compute the byte size of any collection, with deku you
+//!       have to compute it yourself using `temp_value`.
+//!     - Deku is more featureful: it supports assertions, collection end
+//!       predicates, reading to EOF, updates, conditionals, and custom
+//!       serialize/deserialize functions.
+//!     - Deku supports arbitrary expressions in the attributes, sorbit relies
+//!       more on literal expressions.
+//!     - Deku treats your entire byte stream as a bit field, sorbit needs you
+//!       to define bit fields of a fixed size.
+//!
+//!   Overall, my impression is that as long as sorbit's attributes are
+//!   sufficient, it's simpler and more robust than deku. However, deku's
+//!   attributes will handle more complex cases that would mean a fallback to
+//!   manual trait implementation in sorbit.
 
 // Disable the [`std`] standard crate when the "std" feature is not enabled.
 #![cfg_attr(not(feature = "std"), no_std)]
