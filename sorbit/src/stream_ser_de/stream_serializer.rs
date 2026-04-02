@@ -1,3 +1,5 @@
+use std::convert::Infallible;
+
 use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
 use crate::ser_de::RevisableSerializer;
 
@@ -86,7 +88,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
         self.write(&[])
     }
 
-    fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error> {
+    fn error(&mut self, message: &'static str) -> Result<Infallible, Self::Error> {
         Err(ErrorKind::Custom(message).into())
     }
 
