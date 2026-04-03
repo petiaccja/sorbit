@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use core::convert::Infallible;
 
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;

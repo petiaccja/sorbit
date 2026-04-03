@@ -1,7 +1,6 @@
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-#[cfg(feature = "alloc")]
 use crate::byte_order::ByteOrder;
 use crate::error::Error;
 use crate::io::FixedMemoryStream;

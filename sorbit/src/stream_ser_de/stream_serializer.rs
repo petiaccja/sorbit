@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use core::convert::Infallible;
 
 use crate::io::{Read, Seek, SeekFrom, StreamSection, Write};
 use crate::ser_de::RevisableSerializer;
@@ -221,12 +221,6 @@ impl crate::ser_de::Span for RangeSpan {
     }
     fn len(&self) -> u64 {
         self.end() - self.start()
-    }
-}
-
-impl From<RangeSpan> for () {
-    fn from(_value: RangeSpan) -> Self {
-        ()
     }
 }
 
