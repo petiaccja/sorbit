@@ -20,6 +20,11 @@ impl<Buffer> FixedMemoryStream<Buffer> {
     pub fn new(buffer: Buffer) -> Self {
         Self { buffer, stream_pos: 0 }
     }
+
+    /// Return the underlying buffer and consume `self`.
+    pub fn take(self) -> Buffer {
+        self.buffer
+    }
 }
 
 impl<Buffer: AsRef<[u8]>> Read for FixedMemoryStream<Buffer> {
