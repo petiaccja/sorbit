@@ -13,7 +13,7 @@ impl ByteOrder {
     /// Determine the system's native byte ordering.
     ///
     /// For example, little endian for x86 and amd64 computers.
-    pub fn native() -> Self {
+    pub const fn native() -> Self {
         match 0x00FFu16.to_ne_bytes()[0] {
             0xFF => Self::LittleEndian,
             _ => Self::BigEndian,

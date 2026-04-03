@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
 use crate::error::{MessageError, TraceError};
@@ -125,7 +127,7 @@ pub trait Serializer {
     ///
     /// This method can be called by implementors of [`Serialize`](crate::ser_de::Serialize)
     /// when an error occurs during serialization.
-    fn error<O>(&mut self, message: &'static str) -> Result<O, Self::Error>;
+    fn error(&mut self, message: &'static str) -> Result<Infallible, Self::Error>;
 }
 
 /// A serializer that can analyze and update previously serialized objects.
