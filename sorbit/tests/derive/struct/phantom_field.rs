@@ -23,7 +23,7 @@ struct Len {
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 struct ByteCount {
     #[sorbit(value = byte_count(collection))]
-    data: PhantomData<u8>,
+    data: PhantomData<u16>,
     collection: Vec<u8>,
 }
 
@@ -60,7 +60,7 @@ const LEN_VALUE: Len = Len { data: PhantomData, collection: Vec::new() };
 const LEN_BYTES: [u8; 1] = [0];
 
 const BYTE_COUNT_VALUE: ByteCount = ByteCount { data: PhantomData, collection: Vec::new() };
-const BYTE_COUNT_BYTES: [u8; 1] = [0];
+const BYTE_COUNT_BYTES: [u8; 2] = [0, 0];
 
 const CONSTANT_VALUE_BIT: ConstantBit = ConstantBit { data: PhantomData };
 const CONSTANT_BYTES_BIT: [u8; 1] = [13];

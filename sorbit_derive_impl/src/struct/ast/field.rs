@@ -197,7 +197,7 @@ pub fn serialize_transform(
         Transform::ByteCount(_member) => {
             if ty.is_phantom() {
                 let ty = ty.phantom_underlying_type();
-                let zero = custom_expr(region, parse_quote!( <#ty>::from(0) ));
+                let zero = custom_expr(region, parse_quote!( <#ty>::default() ));
                 ref_(region, zero)
             } else {
                 value
