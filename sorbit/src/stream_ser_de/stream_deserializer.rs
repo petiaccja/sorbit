@@ -179,7 +179,7 @@ impl<Stream: Read> Deserializer for StreamDeserializer<Stream> {
     }
 
     fn error<O>(&self, message: &'static str) -> Result<O, Self::Error> {
-        Err(Self::Error::from(ErrorKind::Custom(message)))
+        Err(Self::Error::from(ErrorKind::Message(message)))
     }
 }
 

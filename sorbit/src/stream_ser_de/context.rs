@@ -155,7 +155,7 @@ impl Default for Context {
 }
 
 fn contains_range(outer: &Range<u64>, inner: &Range<u64>) -> bool {
-    outer.contains(&inner.start) && outer.contains(&(core::cmp::max(1, inner.end) - 1))
+    outer.contains(&inner.start) && outer.contains(&(core::cmp::max(1, inner.end) - 1)) || inner.start == inner.end
 }
 
 #[cfg(test)]
