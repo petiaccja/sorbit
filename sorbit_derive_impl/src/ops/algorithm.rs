@@ -1,6 +1,6 @@
 use crate::attribute::ByteOrder;
 use crate::ir::{Region, Value};
-use crate::ops::{self as ops, align, deserialize_composite, member, ok, pad, serialize_composite, try_};
+use crate::ops::{self as ops, align, deserialize_composite, map, member, pad, serialize_composite, try_};
 
 pub fn with_maybe_offset(region: &mut Region, serializer: Value, offset: Option<u64>, serializing: bool) {
     if let Some(offset) = offset {
@@ -32,10 +32,12 @@ pub fn with_maybe_rounding(
         });
         match is_serializing {
             true => {
-                let maybe_composite = serialize_composite(region, serializer, composite_body);
-                let composite = try_(region, maybe_composite);
-                let composite_body_span = member(region, composite, syn::Member::from(1), false);
-                ok(region, composite_body_span)
+                let composite_span_result = serialize_composite(region, serializer, composite_body);
+                map(
+                    region,
+                    composite_span_result,
+                    Region::build(|region, [value]| vec![member(region, value, syn::Member::from(1), false)]),
+                )
             }
             false => deserialize_composite(region, serializer, composite_body),
         }

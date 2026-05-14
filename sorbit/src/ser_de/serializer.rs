@@ -2,7 +2,7 @@ use core::convert::Infallible;
 
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::{MessageError, TraceError};
+use crate::error::{ErrorKind, MessageError, TraceError};
 use crate::io::Read;
 
 /// The section of the byte stream where a serialized object resides.
@@ -24,7 +24,7 @@ pub trait Serializer {
     /// The type a [`Serializer`] returns if serialization succeeded.
     type Success;
     /// The type a [`Serializer`] returns if serialization failed.
-    type Error: TraceError + MessageError + From<BitError>;
+    type Error: TraceError + MessageError + From<ErrorKind> + From<BitError>;
 
     /// Serialize a [`bool`] value.
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error>;

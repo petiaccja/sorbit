@@ -405,6 +405,32 @@ impl ToTokens for OkOp {
 }
 
 //------------------------------------------------------------------------------
+// Map
+//------------------------------------------------------------------------------
+
+op!(
+    name: "map",
+    builder: map,
+    op: MapOp,
+    inputs: {mappable},
+    outputs: {mapped},
+    attributes: {},
+    regions: {body},
+    terminator: false
+);
+
+impl ToTokens for MapOp {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let mappable = &self.mappable;
+        let body = &self.body;
+        let value = body.arguments()[0];
+        tokens.extend(quote! {
+            #mappable.map(|#value| #body)
+        })
+    }
+}
+
+//------------------------------------------------------------------------------
 // Tuple
 //------------------------------------------------------------------------------
 

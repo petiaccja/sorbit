@@ -11,8 +11,8 @@ use crate::ir::{Region, ToDeserializeOp, ToSerializeOp, Value};
 use crate::ops::algorithm::with_field_layout;
 use crate::ops::constants::BIT_FIELD_TYPE;
 use crate::ops::{
-    check_eq, custom_expr, deserialize_items_by_byte_count, deserialize_items_by_len, deserialize_object,
-    empty_bit_field, items, len, ok, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
+    check_eq_if_ok, custom_expr, deserialize_items_by_byte_count, deserialize_items_by_len, deserialize_object,
+    empty_bit_field, items, len, pack_bit_field, ref_, serialize_object, symref, try_, unpack_bit_field,
 };
 use crate::r#struct::parse::FieldLayoutProperties;
 use crate::utility::{PhantomType, member_to_ident};
@@ -67,30 +67,24 @@ impl Field {
             Field::Bit { members, .. } => members.iter().map(|member| &member.ty).collect(),
         }
     }
-}
 
-impl ToSerializeOp for Field {
-    type Args = (Value, bool);
-
-    fn to_serialize_op(&self, region: &mut Region, (serializer, use_padding): (Value, bool)) -> Vec<Value> {
+    fn to_serialize_op_primary_pass(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
         match self {
             Field::Direct { member, ty, multi_pass, transform, layout_properties, .. } => {
-                let layout = &conditionally_padded_layout(layout_properties, use_padding);
-                let result = with_layout(region, serializer, true, layout, |region, serializer| {
+                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
                     let field = symref(region, member_to_ident(member.clone()));
-                    let transformed = serialize_transform(region, serializer, field, ty, transform);
+                    let transformed = serialize_transform(region, serializer, field, ty, transform, true);
                     serialize_object(region, serializer, transformed, multi_pass.unwrap_or(false))
                 });
                 vec![result]
             }
             Field::Bit { ty, bit_numbering, layout_properties, members, .. } => {
-                let layout = &conditionally_padded_layout(layout_properties, use_padding);
-                let result = with_layout(region, serializer, true, layout, |region, serializer| {
+                let result = with_layout(region, serializer, true, layout_properties, |region, serializer| {
                     let mut bit_field = empty_bit_field(region, ty.clone());
 
                     for BitFieldMember { member, ty, transform, bits, .. } in members {
                         let field = symref(region, member_to_ident(member.clone()));
-                        let transformed = serialize_transform(region, serializer, field, ty, transform);
+                        let transformed = serialize_transform(region, serializer, field, ty, transform, true);
                         let result_new_bit_field =
                             pack_bit_field(region, transformed, bit_field, bits.clone(), *bit_numbering);
                         bit_field = try_(region, result_new_bit_field);
@@ -101,6 +95,50 @@ impl ToSerializeOp for Field {
                 });
                 vec![result]
             }
+        }
+    }
+
+    fn to_serialize_op_revise_pass(&self, region: &mut Region, serializer: Value) -> Vec<Value> {
+        match self {
+            Field::Direct { member, ty, multi_pass, transform, .. } => {
+                let field = symref(region, member_to_ident(member.clone()));
+                let transformed = serialize_transform(region, serializer, field, ty, transform, false);
+                let result = serialize_object(region, serializer, transformed, multi_pass.unwrap_or(false));
+                vec![result]
+            }
+            Field::Bit { ty, bit_numbering, members, .. } => {
+                let mut bit_field = empty_bit_field(region, ty.clone());
+
+                for BitFieldMember { member, ty, transform, bits, .. } in members {
+                    let field = symref(region, member_to_ident(member.clone()));
+                    let transformed = serialize_transform(region, serializer, field, ty, transform, false);
+                    let result_new_bit_field =
+                        pack_bit_field(region, transformed, bit_field, bits.clone(), *bit_numbering);
+                    bit_field = try_(region, result_new_bit_field);
+                }
+
+                let bit_field_ref = ref_(region, bit_field);
+                let result = serialize_object(region, serializer, bit_field_ref, false);
+                vec![result]
+            }
+        }
+    }
+}
+
+impl ToSerializeOp for Field {
+    type Args = (Value, bool);
+
+    /// Builds the ops to serialize this field.
+    ///
+    /// In the primary pass, layouts are applied, in the revision pass, layouts
+    /// are not applied.
+    ///
+    /// Data transformation are applied accordingly to each pass.
+    fn to_serialize_op(&self, region: &mut Region, (serializer, primary_pass): (Value, bool)) -> Vec<Value> {
+        if primary_pass {
+            self.to_serialize_op_primary_pass(region, serializer)
+        } else {
+            self.to_serialize_op_revise_pass(region, serializer)
         }
     }
 }
@@ -126,10 +164,9 @@ impl ToDeserializeOp for Field {
                         }
                         Transform::Constant(expr) => {
                             let result = deserialize_object(region, de, ty.phantom_underlying_type().clone());
-                            let value = try_(region, result);
                             let expected = custom_expr(region, expr.clone());
-                            check_eq(region, deserializer, value, expected);
-                            ok(region, value)
+                            check_eq_if_ok(region, deserializer, result, expected);
+                            result
                         }
                     });
                 vec![result]
@@ -170,19 +207,13 @@ fn with_layout(
     with_field_layout(region, serializer, is_serializing, *byte_order, *offset, *align, *round, body)
 }
 
-fn conditionally_padded_layout(layout: &FieldLayoutProperties, use_padding: bool) -> FieldLayoutProperties {
-    match use_padding {
-        false => FieldLayoutProperties { byte_order: layout.byte_order, ..Default::default() },
-        true => layout.clone(),
-    }
-}
-
 pub fn serialize_transform(
     region: &mut Region,
     serializer: Value,
     value: Value,
     ty: &Type,
     transform: &Transform,
+    primary_pass: bool,
 ) -> Value {
     match transform {
         Transform::None => value,
@@ -195,7 +226,7 @@ pub fn serialize_transform(
             ref_(region, len)
         }
         Transform::ByteCount(_member) => {
-            if ty.is_phantom() {
+            if ty.is_phantom() && primary_pass {
                 let ty = ty.phantom_underlying_type();
                 let zero = custom_expr(region, parse_quote!( <#ty>::default() ));
                 ref_(region, zero)
@@ -322,10 +353,11 @@ mod tests {
                 %try_round = try %round
                 yield %res_inner
             }
-            %res_try = try %res
-            %res_1 = member [1, false] %res_try
-            %res_ok = ok %res_1
-            yield %res_ok
+            %res_1 = map %res |%res_v| {
+                %res_v_1 = member [1, false] %res_v
+                yield %res_v_1
+            }
+            yield %res_1
         }
         ";
         assert_matches!(op, pattern);
@@ -370,10 +402,11 @@ mod tests {
                 %try_round = try %round
                 yield %res_inner
             }
-            %res_try = try %res
-            %res_1 = member [1, false] %res_try
-            %res_ok = ok %res_1
-            yield %res_ok
+            %res_1 = map %res |%res_v| {
+                %res_v_1 = member [1, false] %res_v
+                yield %res_v_1
+            }
+            yield %res_1
         }
         ";
         assert_matches!(op, pattern);

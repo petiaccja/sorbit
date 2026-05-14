@@ -172,7 +172,7 @@ impl Struct {
                 for field_idx in reserialize_storages {
                     let field = &self.fields[field_idx];
                     let span = member(region, field_spans, syn::Member::from(field_idx), true);
-                    revise_span(
+                    let result = revise_span(
                         region,
                         serializer,
                         span,
@@ -184,6 +184,7 @@ impl Struct {
                             vec![success(region, serializer)]
                         }),
                     );
+                    try_(region, result);
                 }
             }
 

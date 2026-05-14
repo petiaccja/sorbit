@@ -1,6 +1,9 @@
 //! Utilities for serializing collections, like `Vec`.
 
-use crate::ser_de::{Deserialize, Deserializer, MultiPassSerialize, RevisableSerializer, Serialize, Serializer, Span};
+use crate::{
+    error::ErrorKind,
+    ser_de::{Deserialize, Deserializer, MultiPassSerialize, RevisableSerializer, Serialize, Serializer, Span},
+};
 
 /// Return the length of a collection as a specific (integer) type.
 pub trait LenAs<T> {
@@ -159,16 +162,12 @@ where
 ///
 /// If the length of the collection can not be converted into the requested type
 /// without losing precision, an error is returned.
-pub fn len<T, S, C>(serializer: &mut S, collection: &C) -> Result<T, S::Error>
+pub fn len<T, S, C>(_serializer: &mut S, collection: &C) -> Result<T, S::Error>
 where
     S: Serializer,
     C: LenAs<T>,
 {
-    collection.len_as().ok_or_else(|| {
-        serializer
-            .error("the length of the collection is too large for its binary representation")
-            .unwrap_err()
-    })
+    collection.len_as().ok_or_else(|| ErrorKind::PrecisionLoss.into())
 }
 
 /// Return the number of bytes an object occupies as serialized.
@@ -221,12 +220,24 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{collection::len, io::GrowingMemoryStream, stream_ser_de::StreamSerializer};
+    use super::*;
 
-    #[test]
-    fn len_() {
-        let collection = vec![1, 2, 3];
+    use crate::{
+        error::{Error, ErrorKind},
+        io::GrowingMemoryStream,
+        stream_ser_de::StreamSerializer,
+    };
+
+    use rstest::rstest;
+
+    #[rstest]
+    #[case(0, Ok(0))]
+    #[case(5, Ok(5))]
+    #[case(255, Ok(255))]
+    #[case(256, Err(Error::from(ErrorKind::PrecisionLoss)))]
+    fn len_(#[case] value: usize, #[case] result: Result<u8, Error>) {
+        let collection = vec![0xCC_u8; value];
         let mut serializer = StreamSerializer::new(GrowingMemoryStream::new());
-        assert_eq!(len(&mut serializer, &collection), Ok(3));
+        assert_eq!(len::<u8, _, _>(&mut serializer, &collection), result);
     }
 }

@@ -89,7 +89,7 @@ impl<Stream: Write> Serializer for StreamSerializer<Stream> {
     }
 
     fn error(&mut self, message: &'static str) -> Result<Infallible, Self::Error> {
-        Err(ErrorKind::Custom(message).into())
+        Err(ErrorKind::Message(message).into())
     }
 
     fn serialize_bool(&mut self, value: bool) -> Result<Self::Success, Self::Error> {

@@ -6,36 +6,6 @@ use alloc::string::String;
 #[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
-/// The cause of the error that occured during serialization.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ErrorKind {
-    OutOfBounds,
-    LengthExceedsPadding,
-    UnexpectedEof,
-    InvalidEnumVariant,
-    Bit(BitError),
-    Custom(&'static str),
-    #[cfg(feature = "std")]
-    IO(std::io::ErrorKind),
-}
-
-/// The cause and location of the error that occured during serialization.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Error {
-    kind: ErrorKind,
-    trace: Trace,
-}
-
-/// The location of the error that occured during serialization.
-#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Trace {
-    #[cfg(not(feature = "alloc"))]
-    name: Option<&'static str>,
-    #[cfg(feature = "alloc")]
-    path: Vec<String>,
-}
-
 /// Enable errors to trace the serialized data structure's hierarchy.
 pub trait TraceError {
     /// Annotate the error with the member/item that's being serialized.
@@ -54,8 +24,15 @@ pub trait MessageError {
 }
 
 //------------------------------------------------------------------------------
-// Error implementations
+// Error
 //------------------------------------------------------------------------------
+
+/// The cause and location of the error that occured during serialization.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Error {
+    kind: ErrorKind,
+    trace: Trace,
+}
 
 impl Error {
     /// Return the kind of the error.
@@ -67,6 +44,12 @@ impl Error {
 impl From<BitError> for Error {
     fn from(value: BitError) -> Self {
         Self { kind: ErrorKind::Bit(value), trace: Trace::default() }
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(value: ErrorKind) -> Self {
+        Self { kind: value, trace: Trace::default() }
     }
 }
 
@@ -84,7 +67,7 @@ impl TraceError for Error {
 
 impl MessageError for Error {
     fn message(message: &'static str) -> Self {
-        Self { kind: ErrorKind::Custom(message), trace: Trace::default() }
+        Self { kind: ErrorKind::Message(message), trace: Trace::default() }
     }
 }
 
@@ -100,15 +83,30 @@ impl core::fmt::Display for Error {
     }
 }
 
-impl From<ErrorKind> for Error {
-    fn from(value: ErrorKind) -> Self {
-        Self { kind: value, trace: Trace::default() }
-    }
+//------------------------------------------------------------------------------
+// ErrorKind
+//------------------------------------------------------------------------------
+
+/// The cause of the error that occured during serialization.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ErrorKind {
+    OutOfBounds,
+    LengthExceedsPadding,
+    UnexpectedEof,
+    InvalidEnumVariant,
+    PrecisionLoss,
+    Bit(BitError),
+    Message(&'static str),
+    #[cfg(feature = "std")]
+    IO(std::io::ErrorKind),
 }
 
-//------------------------------------------------------------------------------
-// ErrorKind implementations
-//------------------------------------------------------------------------------
+impl From<BitError> for ErrorKind {
+    fn from(value: BitError) -> Self {
+        Self::Bit(value)
+    }
+}
 
 impl core::fmt::Display for ErrorKind {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -118,8 +116,9 @@ impl core::fmt::Display for ErrorKind {
             LengthExceedsPadding => write!(f, "the current length of the buffer already exceeds the requested padding"),
             UnexpectedEof => write!(f, "end of file reached, cannot read/write more data"),
             InvalidEnumVariant => write!(f, "the numeric value does not correspond to an enum or bool variant"),
+            PrecisionLoss => write!(f, "the conversion loses numeric precision"),
             Bit(err) => write!(f, "the bit field cannot be packed: {err}"),
-            Custom(message) => write!(f, "{message}"),
+            Message(message) => write!(f, "{message}"),
             #[cfg(feature = "std")]
             IO(kind) => write!(f, "{kind}"),
         }
@@ -137,8 +136,17 @@ impl From<std::io::Error> for ErrorKind {
 }
 
 //------------------------------------------------------------------------------
-// Item implementations
+// Trace
 //------------------------------------------------------------------------------
+
+/// The location of the error that occured during serialization.
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Trace {
+    #[cfg(not(feature = "alloc"))]
+    name: Option<&'static str>,
+    #[cfg(feature = "alloc")]
+    path: Vec<String>,
+}
 
 impl Trace {
     /// Check if there are any member/item annotations recorded.

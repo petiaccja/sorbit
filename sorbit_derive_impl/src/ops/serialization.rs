@@ -58,9 +58,9 @@ impl ToTokens for ErrorOp {
 //------------------------------------------------------------------------------
 
 op!(
-    name: "check_eq",
-    builder: check_eq,
-    op: CheckEqOp,
+    name: "check_eq_if_ok",
+    builder: check_eq_if_ok,
+    op: CheckEqIfOkOp,
     inputs: {deserializer, lhs, rhs},
     outputs: {},
     attributes: {},
@@ -68,15 +68,17 @@ op!(
     terminator: false
 );
 
-impl ToTokens for CheckEqOp {
+impl ToTokens for CheckEqIfOkOp {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let deserializer = &self.deserializer;
         let lhs = &self.lhs;
         let rhs = &self.rhs;
         tokens.extend(quote! {
-            if #lhs != #rhs {
-                let _ = #DESERIALIZER_TRAIT::error(#deserializer, "value are not equal")?;
-            };
+            if let Ok(value) = &#lhs {
+                if value != &#rhs {
+                    let _ = #DESERIALIZER_TRAIT::error(#deserializer, "value are not equal")?;
+                };
+            }
         })
     }
 }
@@ -306,7 +308,7 @@ impl ToTokens for ByteOrderOp {
 }
 
 //------------------------------------------------------------------------------
-// Serialize/deserialize with byte order
+// Revise bytes of a span.
 //------------------------------------------------------------------------------
 
 op!(

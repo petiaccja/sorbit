@@ -44,9 +44,7 @@ impl ToTokens for PackBitFieldOp {
         tokens.extend(quote! {
             {
                 let mut bit_field = #bit_field;
-                bit_field.pack(&#value, #bit_range)
-                          .map_err(|err| err.into())
-                          .map(|_| bit_field)
+                bit_field.pack(&#value, #bit_range).map(|_| bit_field)
             }
         })
     }
@@ -70,7 +68,9 @@ impl ToTokens for UnpackBitFieldOp {
         let start = self.bits.start;
         let end = self.bits.end;
         let bit_range = bit_range_to_token_stream(bit_field, start, end, self.bit_numbering);
-        tokens.extend(quote! { #bit_field.unpack::<#ty, _, _>(#bit_range).map_err(|err| err.into()) })
+        tokens.extend(quote! {
+            #bit_field.unpack::<#ty, _, _>(#bit_range)
+        })
     }
 }
 

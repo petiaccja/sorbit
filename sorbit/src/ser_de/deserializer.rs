@@ -1,12 +1,12 @@
 use crate::bit::Error as BitError;
 use crate::byte_order::ByteOrder;
-use crate::error::{MessageError, TraceError};
+use crate::error::{ErrorKind, MessageError, TraceError};
 
 /// Derializers can transform a stream of bytes that can
 /// be sent over the network or stored in files into primitive types.
 pub trait Deserializer: Sized {
     /// The error type returned upon deserialization failure.
-    type Error: TraceError + MessageError + From<BitError>;
+    type Error: TraceError + MessageError + From<ErrorKind> + From<BitError>;
 
     /// Deserialize a [`bool`] value.
     fn deserialize_bool(&mut self) -> Result<bool, Self::Error>;
