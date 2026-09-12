@@ -369,7 +369,7 @@ checksum = "b7c388c1b5e93756d0c740965c41e8822f866621d41acbdf6336a6a168f8840c"
 
 [[package]]
 name = "sorbit"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "num",
  "proc-macro2",
@@ -383,7 +383,7 @@ dependencies = [
 
 [[package]]
 name = "sorbit_derive"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "proc-macro2",
  "sorbit_derive_impl",
@@ -392,7 +392,7 @@ dependencies = [
 
 [[package]]
 name = "sorbit_derive_impl"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "itertools",
  "proc-macro2",

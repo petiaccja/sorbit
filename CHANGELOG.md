@@ -1,3 +1,14 @@
+## 0.1.3 (2026-09-12)
+
+### Features
+
+- implemented serialization of basic types
+
+### Fixes
+
+- fix compilation issue: using ::default() instead of ::from(0) to create zeroes for PhantomData byte_count fields
+- fixed byte_count wrongly serialized as 0
+
 ## 0.1.2 (2026-04-01)
 
 ### Features
